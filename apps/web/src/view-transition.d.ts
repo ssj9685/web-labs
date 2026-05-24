@@ -1,6 +1,9 @@
 interface ViewTransition {
   readonly finished: Promise<void>
   readonly ready: Promise<void>
+  readonly types?: {
+    add(type: string): void
+  }
   readonly updateCallbackDone: Promise<void>
   skipTransition(): void
 }

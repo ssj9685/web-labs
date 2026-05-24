@@ -8,17 +8,23 @@ the deployed site.
 ## Current Lab
 
 - `apps/web`: React + Vite app deployed to GitHub Pages.
-- `View Transitions Toolkit`: A production-style interaction lab inspired by
-  `googlechromelabs/view-transitions-toolkit`.
+- `Incident Command Center`: A product-style View Transitions Toolkit demo that
+  folds the upstream demo folders into one incident triage workflow.
 
 The live lab uses:
 
 - feature detection from `view-transitions-toolkit/feature-detection`
-- temporary transition names from `view-transitions-toolkit/misc`
+- transition animation inventory, geometry extraction, and group optimization
+  from `view-transitions-toolkit/animations`
 - playback controls from `view-transitions-toolkit/playback-control`
-- group animation optimization from `view-transitions-toolkit/animations`
+- temporary transition names from `view-transitions-toolkit/misc`
 - active transition tracking from
   `view-transitions-toolkit/track-active-view-transition`
+
+The product flow maps the upstream `demo/feature-detection`,
+`demo/navigation-types`, `demo/get-animations`, `demo/measure`,
+`demo/optimize`, `demo/playback-control`, and
+`demo/scroll-driven-view-transition` examples into one workspace.
 
 ## Commands
 

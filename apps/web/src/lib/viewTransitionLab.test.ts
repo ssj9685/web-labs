@@ -3,15 +3,17 @@ import {
   buildTransitionName,
   capabilityRows,
   describePlaybackState,
+  formatProgress,
+  transitionTypesForIncident,
 } from './viewTransitionLab'
 
 describe('view transition lab helpers', () => {
   it('builds CSS-safe transition names from user-facing labels', () => {
-    expect(buildTransitionName('Hero Tile', 'Launch Deck')).toBe(
-      'lab-hero-tile-launch-deck',
+    expect(buildTransitionName('Incident Row', 'Checkout Latency')).toBe(
+      'lab-incident-row-checkout-latency',
     )
-    expect(buildTransitionName('Grid/Detail', 'Revenue+Ops')).toBe(
-      'lab-grid-detail-revenue-ops',
+    expect(buildTransitionName('Trace/Drawer', 'API+Gateway')).toBe(
+      'lab-trace-drawer-api-gateway',
     )
   })
 
@@ -37,5 +39,21 @@ describe('view transition lab helpers', () => {
     expect(describePlaybackState('running')).toBe('Transition is playing')
     expect(describePlaybackState('paused')).toBe('Transition is paused')
     expect(describePlaybackState('scrubbed')).toBe('Transition held at 50%')
+  })
+
+  it('derives transition types from incident navigation intent', () => {
+    expect(
+      transitionTypesForIncident('checkout-latency', 'edge-cache', 'critical'),
+    ).toEqual([
+      'from-checkout-latency',
+      'to-edge-cache',
+      'severity-critical',
+    ])
+  })
+
+  it('formats scrub progress as a bounded percentage', () => {
+    expect(formatProgress(-0.2)).toBe('0%')
+    expect(formatProgress(0.375)).toBe('38%')
+    expect(formatProgress(1.4)).toBe('100%')
   })
 })

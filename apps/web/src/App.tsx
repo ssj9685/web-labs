@@ -1,54 +1,115 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import {
-  ArrowRight,
-  Beaker,
+  Activity,
+  AlertTriangle,
+  Bell,
   Check,
+  ChevronRight,
   CircleDot,
+  Clock3,
+  Command,
   Gauge,
   Github,
-  Grid3X3,
+  GitBranch,
+  ListFilter,
   Pause,
   Play,
+  Radio,
   ScanLine,
-  Sparkles,
+  Search,
+  ShieldCheck,
   StepForward,
+  TimerReset,
+  Zap,
 } from 'lucide-react'
 import {
+  extractGeometry,
+  getAnimations,
   OPTIMIZATION_STRATEGY,
   optimizeGroupAnimations,
+  ViewTransitionPart,
 } from 'view-transitions-toolkit/animations'
 import { pause, resume, scrub } from 'view-transitions-toolkit/playback-control'
 import { setTemporaryViewTransitionNames } from 'view-transitions-toolkit/misc'
 import { trackActiveViewTransition } from 'view-transitions-toolkit/track-active-view-transition'
-import { labCases, labs, type LabCase } from './data/labs'
+import {
+  incidentTimeline,
+  primaryWorkspace,
+  toolkitMoments,
+  type Incident,
+} from './data/incidents'
 import {
   buildTransitionName,
   capabilityRows,
   describePlaybackState,
+  formatProgress,
   supportsSameDocumentTransition,
+  transitionTypesForIncident,
   type PlaybackState,
 } from './lib/viewTransitionLab'
 import './App.css'
 
-const nextCaseId = (currentId: string) => {
-  const currentIndex = labCases.findIndex((item) => item.id === currentId)
-  return labCases[(currentIndex + 1) % labCases.length].id
+type TransitionPreference = {
+  state: PlaybackState
+  progress?: number
 }
 
-const collectTemporaryNames = (caseItem: LabCase) => {
-  const surface = document.querySelector<HTMLElement>('[data-transition-stage]')
+type TransitionDiagnostic = {
+  animationCount: number
+  geometry: string
+  groupCount: number
+  optimizedGroups: string[]
+  source: string
+  types: string[]
+}
+
+const initialDiagnostic: TransitionDiagnostic = {
+  animationCount: 0,
+  geometry: 'Waiting for first incident switch',
+  groupCount: 0,
+  optimizedGroups: [],
+  source: 'Idle',
+  types: [],
+}
+
+const nextIncidentId = (currentId: string) => {
+  const currentIndex = incidentTimeline.findIndex(
+    (incident) => incident.id === currentId,
+  )
+
+  return incidentTimeline[(currentIndex + 1) % incidentTimeline.length].id
+}
+
+const collectTemporaryNames = (incident: Incident) => {
+  const stage = document.querySelector<HTMLElement>('[data-transition-stage]')
   const title = document.querySelector<HTMLElement>('[data-transition-title]')
+  const map = document.querySelector<HTMLElement>('[data-transition-map]')
+  const inspector = document.querySelector<HTMLElement>(
+    '[data-transition-inspector]',
+  )
 
   return [
-    surface
-      ? ([surface, buildTransitionName('stage', caseItem.id)] as [
+    stage
+      ? ([stage, buildTransitionName('incident-stage', incident.id)] as [
           HTMLElement,
           string,
         ])
       : null,
     title
-      ? ([title, buildTransitionName('title', caseItem.title)] as [
+      ? ([title, buildTransitionName('incident-title', incident.title)] as [
+          HTMLElement,
+          string,
+        ])
+      : null,
+    map
+      ? ([map, buildTransitionName('service-map', incident.service)] as [
+          HTMLElement,
+          string,
+        ])
+      : null,
+    inspector
+      ? ([inspector, buildTransitionName('transition-inspector')] as [
           HTMLElement,
           string,
         ])
@@ -56,48 +117,107 @@ const collectTemporaryNames = (caseItem: LabCase) => {
   ].filter((entry): entry is [HTMLElement, string] => Boolean(entry))
 }
 
+const describeStatus = (status: Incident['status']) => {
+  if (status === 'investigating') return 'Investigating'
+  if (status === 'mitigating') return 'Mitigating'
+  return 'Monitoring'
+}
+
+const addTransitionTypes = (transition: ViewTransition, types: string[]) => {
+  const typedTransition = transition as ViewTransition & {
+    types?: { add: (type: string) => void }
+  }
+
+  types.forEach((type) => typedTransition.types?.add(type))
+}
+
 function App() {
-  const [selectedCaseId, setSelectedCaseId] = useState(labCases[0].id)
-  const [playbackState, setPlaybackState] = useState<PlaybackState>('running')
-  const [optimizedGroups, setOptimizedGroups] = useState<string[]>([])
-  const [lastTransitionMode, setLastTransitionMode] =
-    useState('Same-document transition')
+  const [selectedIncidentId, setSelectedIncidentId] = useState(
+    incidentTimeline[0].id,
+  )
+  const [playbackState, setPlaybackState] =
+    useState<PlaybackState>('running')
+  const [scrubProgress, setScrubProgress] = useState(0.5)
+  const [lastTransitionMode, setLastTransitionMode] = useState(
+    'Waiting for incident switch',
+  )
+  const [diagnostic, setDiagnostic] =
+    useState<TransitionDiagnostic>(initialDiagnostic)
   const activeTransitionRef = useRef<ViewTransition | null>(null)
 
-  const selectedCase = useMemo(
+  const selectedIncident = useMemo(
     () =>
-      labCases.find((caseItem) => caseItem.id === selectedCaseId) ??
-      labCases[0],
-    [selectedCaseId],
+      incidentTimeline.find((incident) => incident.id === selectedIncidentId) ??
+      incidentTimeline[0],
+    [selectedIncidentId],
   )
 
   const supportRows = useMemo(() => capabilityRows(), [])
   const supportedCount = supportRows.filter((row) => row.supported).length
+  const nextId = nextIncidentId(selectedIncidentId)
 
   useEffect(() => {
     trackActiveViewTransition('same-document')
   }, [])
 
-  const applyPlaybackPreference = async (
+  const inspectTransition = async (
     transition: ViewTransition,
-    preference: PlaybackState,
+    incident: Incident,
+    preference: TransitionPreference,
+    types: string[],
   ) => {
     await transition.ready
-    const groups = optimizeGroupAnimations(
-      transition,
-      '*',
-      OPTIMIZATION_STRATEGY.SCALE,
-    )
-    setOptimizedGroups(groups)
 
-    if (preference === 'paused') {
+    let animationCount = 0
+    let groupCount = 0
+    let geometry = 'Geometry unavailable'
+    let optimizedGroups: string[]
+
+    try {
+      const animations = getAnimations(transition)
+      const groupAnimations = getAnimations(
+        transition,
+        '*',
+        ViewTransitionPart.Group,
+      )
+      animationCount = animations.length
+      groupCount = groupAnimations.length
+
+      if (groupAnimations[0]) {
+        const bounds = extractGeometry(groupAnimations[0])
+        geometry = `${Math.round(bounds.before.width)}x${Math.round(
+          bounds.before.height,
+        )} -> ${Math.round(bounds.after.width)}x${Math.round(
+          bounds.after.height,
+        )}`
+      }
+
+      optimizedGroups = optimizeGroupAnimations(
+        transition,
+        '*',
+        OPTIMIZATION_STRATEGY.SCALE,
+      )
+    } catch {
+      optimizedGroups = []
+    }
+
+    setDiagnostic({
+      animationCount,
+      geometry,
+      groupCount,
+      optimizedGroups,
+      source: incident.title,
+      types,
+    })
+
+    if (preference.state === 'paused') {
       pause(transition)
       setPlaybackState('paused')
       return
     }
 
-    if (preference === 'scrubbed') {
-      scrub(transition, 0.5)
+    if (preference.state === 'scrubbed') {
+      scrub(transition, preference.progress ?? scrubProgress)
       setPlaybackState('scrubbed')
       return
     }
@@ -106,41 +226,67 @@ function App() {
     setPlaybackState('running')
   }
 
-  const selectCase = (
-    nextId: string,
-    playbackPreference: PlaybackState = 'running',
+  const selectIncident = (
+    nextIncidentIdValue: string,
+    preference: TransitionPreference = { state: 'running' },
   ) => {
-    const nextCase = labCases.find((caseItem) => caseItem.id === nextId)
-    if (!nextCase) return
+    const nextIncident = incidentTimeline.find(
+      (incident) => incident.id === nextIncidentIdValue,
+    )
+    if (!nextIncident) return
 
     if (!supportsSameDocumentTransition()) {
-      setSelectedCaseId(nextId)
+      setSelectedIncidentId(nextIncidentIdValue)
       setLastTransitionMode('Fallback state update')
+      setDiagnostic({
+        animationCount: 0,
+        geometry: 'View Transition API unavailable',
+        groupCount: 0,
+        optimizedGroups: [],
+        source: nextIncident.title,
+        types: [],
+      })
       return
     }
 
     activeTransitionRef.current?.skipTransition()
 
     let finishTemporaryNames = () => {}
-    const finishedProxy = new Promise<void>((resolve) => {
+    const temporaryNameWindow = new Promise<void>((resolve) => {
       finishTemporaryNames = resolve
     })
     void setTemporaryViewTransitionNames(
-      collectTemporaryNames(nextCase),
-      finishedProxy,
+      collectTemporaryNames(nextIncident),
+      temporaryNameWindow,
+    )
+
+    const types = transitionTypesForIncident(
+      selectedIncidentId,
+      nextIncidentIdValue,
+      nextIncident.severity,
     )
 
     const transition = document.startViewTransition(() => {
-      flushSync(() => setSelectedCaseId(nextId))
+      flushSync(() => setSelectedIncidentId(nextIncidentIdValue))
     })
 
     activeTransitionRef.current = transition
-    setLastTransitionMode(`Toolkit transition: ${nextCase.title}`)
+    addTransitionTypes(transition, types)
+    setLastTransitionMode(`Incident switch: ${nextIncident.service}`)
 
-    void applyPlaybackPreference(transition, playbackPreference).catch(() => {
-      setOptimizedGroups([])
-      setPlaybackState('running')
-    })
+    void inspectTransition(transition, nextIncident, preference, types).catch(
+      () => {
+        setDiagnostic({
+          animationCount: 0,
+          geometry: 'Transition inspection failed',
+          groupCount: 0,
+          optimizedGroups: [],
+          source: nextIncident.title,
+          types,
+        })
+        setPlaybackState('running')
+      },
+    )
 
     void transition.finished.finally(() => {
       finishTemporaryNames()
@@ -160,7 +306,7 @@ function App() {
       ).activeViewTransition
 
     if (!transition) {
-      selectCase(nextCaseId(selectedCaseId), 'running')
+      selectIncident(nextId)
       return
     }
 
@@ -168,21 +314,45 @@ function App() {
     setPlaybackState('running')
   }
 
+  const holdNextTransition = () => {
+    const progress = 0.5
+    setScrubProgress(progress)
+    selectIncident(nextId, { state: 'scrubbed', progress })
+  }
+
+  const handleScrubChange = (progress: number) => {
+    setScrubProgress(progress)
+
+    const transition =
+      activeTransitionRef.current ??
+      (
+        document as Document & {
+          activeViewTransition?: ViewTransition | null
+        }
+      ).activeViewTransition
+
+    if (transition) {
+      scrub(transition, progress)
+      setPlaybackState('scrubbed')
+      return
+    }
+
+    selectIncident(nextId, { state: 'scrubbed', progress })
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
         <a className="brand" href="#top" aria-label="Web Labs home">
           <span className="brand-mark">
-            <Beaker size={18} aria-hidden="true" />
+            <Activity size={18} aria-hidden="true" />
           </span>
           <span>Web Labs</span>
         </a>
-        <nav aria-label="Lab navigation">
-          {labs.map((lab) => (
-            <a key={lab.slug} href={lab.href}>
-              {lab.title}
-            </a>
-          ))}
+        <nav aria-label="Workspace navigation">
+          <a href="#incidents">Incidents</a>
+          <a href="#toolkit">Toolkit flow</a>
+          <a href="#diagnostics">Inspector</a>
         </nav>
         <a
           className="icon-link"
@@ -195,91 +365,257 @@ function App() {
         </a>
       </header>
 
-      <section className="hero-section" id="top" aria-labelledby="hero-title">
+      <section className="command-hero" id="top" aria-labelledby="hero-title">
         <div className="hero-copy">
-          <p className="eyebrow">Browser experiments as usable product surfaces</p>
-          <h1 id="hero-title">Web Labs</h1>
-          <p>
-            A live playground for modern web platform features, starting with a
-            View Transitions Toolkit lab that behaves like a real app workflow.
-          </p>
-          <div className="hero-actions">
-            <a href="#view-transitions-toolkit" className="primary-action">
-              Open live lab
-              <ArrowRight size={17} aria-hidden="true" />
-            </a>
-            <a
-              href="https://github.com/googlechromelabs/view-transitions-toolkit"
-              target="_blank"
-              rel="noreferrer"
-              className="secondary-action"
-            >
-              Reference toolkit
-            </a>
-          </div>
+          <p className="eyebrow">Live workspace</p>
+          <h1 id="hero-title">{primaryWorkspace.title}</h1>
+          <p>{primaryWorkspace.subtitle}</p>
         </div>
 
-        <div className="hero-visual" aria-hidden="true">
-          <div className="visual-toolbar">
-            <span></span>
-            <span></span>
-            <span></span>
+        <div className="hero-status" aria-label="Workspace status">
+          <div>
+            <span className="status-dot"></span>
+            <strong>Production checkout</strong>
+            <small>{describeStatus(selectedIncident.status)}</small>
           </div>
-          <div className="visual-grid">
-            <div className="visual-large"></div>
-            <div className="visual-stack">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-            <div className="visual-strip"></div>
+          <div>
+            <strong>
+              {supportedCount}/{supportRows.length}
+            </strong>
+            <small>browser capabilities</small>
+          </div>
+          <div>
+            <strong>{selectedIncident.signal}</strong>
+            <small>{selectedIncident.impact}</small>
           </div>
         </div>
       </section>
 
       <section
-        className="lab-shell"
-        id="view-transitions-toolkit"
-        aria-labelledby="lab-title"
+        className="incident-workspace"
+        id="incidents"
+        aria-label="Incident command workspace"
       >
-        <aside className="lab-rail" aria-label="Lab catalog">
-          <div>
-            <p className="section-label">Labs</p>
-            <h2>Experiment catalog</h2>
+        <aside className="timeline-panel" aria-label="Incident timeline">
+          <div className="panel-heading">
+            <div>
+              <p className="section-label">Timeline</p>
+              <h2>Active incidents</h2>
+            </div>
+            <button type="button" aria-label="Filter incidents" title="Filter">
+              <ListFilter size={17} aria-hidden="true" />
+            </button>
           </div>
-          <div className="lab-list">
-            {labs.map((lab) => (
-              <a
-                href={lab.href}
-                key={lab.slug}
-                className={`lab-item ${lab.status === 'live' ? 'is-live' : ''}`}
+
+          <label className="search-box">
+            <Search size={16} aria-hidden="true" />
+            <span>Search services</span>
+          </label>
+
+          <div className="incident-list">
+            {incidentTimeline.map((incident) => (
+              <button
+                type="button"
+                key={incident.id}
+                className={`incident-row severity-${incident.severity} ${
+                  incident.id === selectedIncident.id ? 'is-selected' : ''
+                }`}
+                onClick={() => selectIncident(incident.id)}
+                data-incident-row={incident.id}
               >
-                <span>{lab.accent}</span>
-                <strong>{lab.title}</strong>
-                <small>{lab.metric}</small>
-              </a>
+                <span className="incident-time">{incident.time}</span>
+                <span className="incident-pulse"></span>
+                <span className="incident-copy">
+                  <strong>{incident.title}</strong>
+                  <small>{incident.service}</small>
+                </span>
+                <ChevronRight size={16} aria-hidden="true" />
+              </button>
             ))}
           </div>
         </aside>
 
-        <div className="lab-workspace">
-          <div className="lab-heading">
+        <section
+          className={`incident-detail severity-${selectedIncident.severity}`}
+          aria-label={`${selectedIncident.title} detail`}
+          data-transition-stage
+        >
+          <div className="detail-header">
             <div>
-              <p className="section-label">{labs[0].kicker}</p>
-              <h2 id="lab-title">{labs[0].title}</h2>
-              <p>{labs[0].subtitle}</p>
+              <p className="section-label">{selectedIncident.service}</p>
+              <h2 data-transition-title>{selectedIncident.title}</h2>
+              <p>{selectedIncident.summary}</p>
             </div>
-            <div className="support-score" aria-label="Supported features">
-              <strong>
-                {supportedCount}/{supportRows.length}
-              </strong>
-              <span>supported here</span>
+            <span className="severity-badge">
+              <AlertTriangle size={16} aria-hidden="true" />
+              {selectedIncident.severity}
+            </span>
+          </div>
+
+          <div className="metric-grid" aria-label="Incident metrics">
+            {selectedIncident.metrics.map((metric) => (
+              <div className="metric" key={metric.label}>
+                <small>{metric.label}</small>
+                <strong>{metric.value}</strong>
+                <span>{metric.trend}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="service-map" data-transition-map>
+            <div className="map-node node-app">
+              <span>App</span>
+              <strong>Storefront</strong>
+            </div>
+            <div className="map-link"></div>
+            <div className="map-node node-service">
+              <span>Service</span>
+              <strong>{selectedIncident.service}</strong>
+            </div>
+            <div className="map-link is-hot"></div>
+            <div className="map-node node-region">
+              <span>Region</span>
+              <strong>{selectedIncident.region}</strong>
             </div>
           </div>
 
-          <div className="feature-grid" aria-label="Toolkit support matrix">
+          <div className="detail-grid">
+            <section aria-labelledby="logs-title">
+              <div className="subheading">
+                <Radio size={16} aria-hidden="true" />
+                <h3 id="logs-title">Live trace</h3>
+              </div>
+              <div className="log-list">
+                {selectedIncident.logs.map((log) => (
+                  <div className={`log-line level-${log.level}`} key={log.time}>
+                    <time>{log.time}</time>
+                    <span>{log.level}</span>
+                    <p>{log.message}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section aria-labelledby="actions-title">
+              <div className="subheading">
+                <ShieldCheck size={16} aria-hidden="true" />
+                <h3 id="actions-title">Response actions</h3>
+              </div>
+              <div className="action-list">
+                {selectedIncident.actions.map((action) => (
+                  <div className={`action-item state-${action.state}`} key={action.label}>
+                    <span>
+                      {action.state === 'done' ? (
+                        <Check size={14} aria-hidden="true" />
+                      ) : (
+                        <CircleDot size={14} aria-hidden="true" />
+                      )}
+                    </span>
+                    <strong>{action.label}</strong>
+                    <small>{action.state}</small>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <aside
+          className="inspector-panel"
+          id="diagnostics"
+          aria-label="Transition inspector"
+          data-transition-inspector
+        >
+          <div className="panel-heading">
+            <div>
+              <p className="section-label">Inspector</p>
+              <h2>Motion runtime</h2>
+            </div>
+            <Command size={18} aria-hidden="true" />
+          </div>
+
+          <div className="playback-panel">
+            <div>
+              <p>{describePlaybackState(playbackState)}</p>
+              <strong>{lastTransitionMode}</strong>
+            </div>
+            <div className="playback-actions">
+              <button
+                type="button"
+                onClick={() => selectIncident(nextId)}
+                aria-label="Run next incident transition"
+                title="Next"
+              >
+                <StepForward size={17} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={holdNextTransition}
+                aria-label="Hold next transition at 50 percent"
+                title="Hold"
+              >
+                <Pause size={17} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={resumeActiveTransition}
+                aria-label="Resume active transition"
+                title="Resume"
+              >
+                <Play size={17} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
+          <label className="scrub-control">
+            <span>
+              <TimerReset size={15} aria-hidden="true" />
+              Timeline scrub
+            </span>
+            <strong>{formatProgress(scrubProgress)}</strong>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={scrubProgress}
+              onChange={(event) =>
+                handleScrubChange(Number(event.currentTarget.value))
+              }
+              aria-label="Scrub the active transition"
+            />
+          </label>
+
+          <div className="diagnostic-grid" aria-label="Transition diagnostics">
+            <div>
+              <Gauge size={16} aria-hidden="true" />
+              <span>{diagnostic.animationCount}</span>
+              <small>animations</small>
+            </div>
+            <div>
+              <GitBranch size={16} aria-hidden="true" />
+              <span>{diagnostic.groupCount}</span>
+              <small>groups</small>
+            </div>
+            <div>
+              <ScanLine size={16} aria-hidden="true" />
+              <span>{diagnostic.geometry}</span>
+              <small>geometry</small>
+            </div>
+          </div>
+
+          <div className="optimized-readout">
+            <small>Optimized groups</small>
+            <strong>
+              {diagnostic.optimizedGroups.length
+                ? diagnostic.optimizedGroups.join(', ')
+                : 'ready'}
+            </strong>
+          </div>
+
+          <div className="support-list" aria-label="Browser support matrix">
             {supportRows.map((row) => (
-              <div className="feature-row" key={row.label}>
+              <div className="support-row" key={row.label}>
                 <span className={row.supported ? 'is-supported' : ''}>
                   {row.supported ? (
                     <Check size={14} aria-hidden="true" />
@@ -292,123 +628,56 @@ function App() {
             ))}
           </div>
 
-          <div className="transition-console">
-            <section className="case-grid" aria-label="Transition cases">
-              {labCases.map((caseItem) => (
-                <button
-                  key={caseItem.id}
-                  type="button"
-                  className={`case-card ${caseItem.id === selectedCase.id ? 'is-selected' : ''}`}
-                  onClick={() => selectCase(caseItem.id)}
-                  data-case-id={caseItem.id}
-                >
-                  <span className={`case-swatch tone-${caseItem.tone}`}></span>
-                  <span>
-                    <strong>{caseItem.title}</strong>
-                    <small>{caseItem.category}</small>
-                  </span>
-                </button>
-              ))}
-            </section>
-
-            <section
-              className={`case-stage tone-${selectedCase.tone}`}
-              aria-label={`${selectedCase.title} detail`}
-              data-transition-stage
-            >
-              <div className="case-stage-header">
-                <div>
-                  <p>{selectedCase.category}</p>
-                  <h3 data-transition-title>{selectedCase.title}</h3>
-                </div>
-                <span>{selectedCase.owner}</span>
-              </div>
-
-              <div className="stage-visual">
-                <div className="orbital">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </div>
-                <div className="metric-stack">
-                  <strong>{selectedCase.metric}</strong>
-                  <span>{selectedCase.signal}</span>
-                </div>
-              </div>
-
-              <p className="case-summary">{selectedCase.summary}</p>
-
-              <div className="playback-panel">
-                <div>
-                  <p className="section-label">Playback</p>
-                  <strong>{describePlaybackState(playbackState)}</strong>
-                  <span>{lastTransitionMode}</span>
-                </div>
-                <div className="playback-actions">
-                  <button
-                    type="button"
-                    onClick={() => selectCase(nextCaseId(selectedCaseId))}
-                    aria-label="Run next transition"
-                    title="Run next transition"
-                  >
-                    <StepForward size={17} aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      selectCase(nextCaseId(selectedCaseId), 'scrubbed')
-                    }
-                    aria-label="Hold next transition at 50 percent"
-                    title="Hold at 50%"
-                  >
-                    <Pause size={17} aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={resumeActiveTransition}
-                    aria-label="Resume active transition"
-                    title="Resume"
-                  >
-                    <Play size={17} aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
-            </section>
+          <div className="type-stack" aria-label="Transition types">
+            {diagnostic.types.length ? (
+              diagnostic.types.map((type) => <span key={type}>{type}</span>)
+            ) : (
+              <span>types pending</span>
+            )}
           </div>
-
-          <div className="toolkit-strip" aria-label="Toolkit modules used">
-            <div>
-              <Grid3X3 size={17} aria-hidden="true" />
-              <span>Temporary names</span>
-            </div>
-            <div>
-              <Gauge size={17} aria-hidden="true" />
-              <span>Playback control</span>
-            </div>
-            <div>
-              <ScanLine size={17} aria-hidden="true" />
-              <span>
-                Optimized groups:{' '}
-                {optimizedGroups.length ? optimizedGroups.join(', ') : 'ready'}
-              </span>
-            </div>
-          </div>
-        </div>
+        </aside>
       </section>
 
-      <section className="roadmap" aria-labelledby="roadmap-title">
-        <div>
-          <p className="section-label">Monorepo direction</p>
-          <h2 id="roadmap-title">Built for more labs</h2>
+      <section className="toolkit-flow" id="toolkit" aria-labelledby="toolkit-title">
+        <div className="toolkit-heading">
+          <p className="section-label">Toolkit flow</p>
+          <h2 id="toolkit-title">One product path, not separate demos</h2>
+          <p>
+            The original demo folders are represented as operator moments inside
+            the same incident workflow.
+          </p>
         </div>
-        <div className="roadmap-list">
-          {labs.slice(1).map((lab) => (
-            <article key={lab.slug}>
-              <Sparkles size={18} aria-hidden="true" />
-              <h3>{lab.title}</h3>
-              <p>{lab.subtitle}</p>
+
+        <div className="moment-rail">
+          {toolkitMoments.map((moment, index) => (
+            <article key={moment.demoFolder} className="moment-item">
+              <span>{String(index + 1).padStart(2, '0')}</span>
+              <div>
+                <strong>{moment.label}</strong>
+                <p>{moment.productMoment}</p>
+                <small>{moment.demoFolder}</small>
+              </div>
             </article>
           ))}
+        </div>
+
+        <div className="system-strip" aria-label="Current incident suspects">
+          <div>
+            <Zap size={17} aria-hidden="true" />
+            <span>{diagnostic.source}</span>
+          </div>
+          {selectedIncident.suspects.map((suspect) => (
+            <div key={suspect.label}>
+              <Bell size={17} aria-hidden="true" />
+              <span>
+                {suspect.label} / {suspect.confidence}
+              </span>
+            </div>
+          ))}
+          <div>
+            <Clock3 size={17} aria-hidden="true" />
+            <span>{selectedIncident.duration}</span>
+          </div>
         </div>
       </section>
     </main>
