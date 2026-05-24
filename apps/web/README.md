@@ -1,8 +1,8 @@
 # Web Labs App
 
-The deployed Web Labs frontend. The current surface is an Incident Command
-Center that demonstrates View Transitions Toolkit behavior inside one product
-workflow instead of separate demo pages.
+The deployed Web Labs frontend. The current surface is a Checkout Incident
+Review that demonstrates View Transitions Toolkit behavior inside one focused
+product workflow.
 
 ```bash
 npm run dev -w @web-labs/web

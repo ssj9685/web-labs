@@ -1,295 +1,170 @@
-export type WorkspaceStatus = 'live' | 'queued' | 'research'
+export type ReviewStage = 'alert' | 'review' | 'resolved'
 export type IncidentSeverity = 'critical' | 'high' | 'medium'
-export type IncidentStatus = 'investigating' | 'mitigating' | 'monitoring'
 
-export type Workspace = {
-  slug: string
-  title: string
-  status: WorkspaceStatus
-  subtitle: string
-  capabilities: string[]
-}
-
-export type IncidentMetric = {
+export type ReviewMetric = {
   label: string
-  value: string
-  trend: string
+  before: string
+  after: string
 }
 
-export type IncidentLog = {
+export type ReviewEvidence = {
   time: string
-  level: 'error' | 'warn' | 'info'
-  message: string
-}
-
-export type IncidentAction = {
   label: string
-  state: 'ready' | 'running' | 'done'
+  detail: string
 }
 
-export type IncidentSuspect = {
+export type RollbackPlan = {
   label: string
-  confidence: string
+  target: string
+  expectedResult: string
 }
 
-export type Incident = {
+export type ReviewIncident = {
   id: string
   time: string
-  service: string
   title: string
+  service: string
   severity: IncidentSeverity
-  status: IncidentStatus
   impact: string
-  region: string
-  signal: string
-  duration: string
   summary: string
-  metrics: IncidentMetric[]
-  logs: IncidentLog[]
-  actions: IncidentAction[]
-  suspects: IncidentSuspect[]
+  metrics: ReviewMetric[]
+  evidence: ReviewEvidence[]
+  rollback: RollbackPlan
 }
 
-export type ToolkitMoment = {
-  demoFolder: string
+export type CheckoutReview = {
+  slug: string
+  title: string
+  subtitle: string
+  primaryAction: string
+  resolutionAction: string
+  incidents: ReviewIncident[]
+}
+
+export type ReviewMotionMoment = {
   label: string
   productMoment: string
+  toolkitUse: string
 }
 
-export const primaryWorkspace: Workspace = {
-  slug: 'incident-command',
-  title: 'Incident Command Center',
-  status: 'live',
+export const checkoutReview: CheckoutReview = {
+  slug: 'checkout-incident-review',
+  title: 'Checkout Incident Review',
   subtitle:
-    'A single operations surface that folds the View Transitions Toolkit demos into incident triage, animation inspection, and timeline scrubbing.',
-  capabilities: [
-    'feature-detection',
-    'navigation-types',
-    'get-animations',
-    'measure',
-    'optimize',
-    'playback-control',
-    'scroll-driven-view-transition',
+    'Review the payment latency alert, inspect the evidence, and apply the rollback.',
+  primaryAction: 'Open incident',
+  resolutionAction: 'Apply rollback',
+  incidents: [
+    {
+      id: 'checkout-latency',
+      time: '09:41',
+      title: 'Payment authorization latency',
+      service: 'Checkout API',
+      severity: 'critical',
+      impact: '18% of checkout sessions delayed',
+      summary:
+        'A cache rule rollout caused authorization retries to queue behind the payment gateway.',
+      metrics: [
+        { label: 'p95 latency', before: '4.8s', after: '740ms' },
+        { label: 'retry rate', before: '31%', after: '4%' },
+      ],
+      evidence: [
+        {
+          time: '09:40',
+          label: 'Rollout reached 100%',
+          detail: 'checkout-auth-v7 was promoted to every edge region.',
+        },
+        {
+          time: '09:41',
+          label: 'Retry budget exceeded',
+          detail: 'Payment authorization requests crossed the retry threshold.',
+        },
+      ],
+      rollback: {
+        label: 'Rollback checkout-auth-v7',
+        target: 'Edge cache rule',
+        expectedResult: 'p95 latency returned below target',
+      },
+    },
+    {
+      id: 'issuer-timeouts',
+      time: '09:37',
+      title: 'Issuer timeout spike',
+      service: 'Payment Gateway',
+      severity: 'high',
+      impact: 'Card authorization retries elevated',
+      summary:
+        'A subset of issuer calls slowed down after traffic shifted to the warm pool.',
+      metrics: [
+        { label: 'issuer timeout', before: '12%', after: '2%' },
+        { label: 'approval rate', before: '91%', after: '97%' },
+      ],
+      evidence: [
+        {
+          time: '09:36',
+          label: 'Warm pool shift',
+          detail: 'Traffic moved to the secondary gateway pool during mitigation.',
+        },
+        {
+          time: '09:37',
+          label: 'Issuer queue grew',
+          detail: 'The timeout spike is isolated to two issuer integrations.',
+        },
+      ],
+      rollback: {
+        label: 'Restore primary gateway route',
+        target: 'Payment route map',
+        expectedResult: 'issuer timeout returned below target',
+      },
+    },
+    {
+      id: 'support-volume',
+      time: '09:32',
+      title: 'Support contact increase',
+      service: 'Customer Support',
+      severity: 'medium',
+      impact: 'Checkout delay tickets increasing',
+      summary:
+        'Customers are contacting support after seeing the payment confirmation screen stall.',
+      metrics: [
+        { label: 'new tickets', before: '318', after: '46' },
+        { label: 'avg wait', before: '11m', after: '2m' },
+      ],
+      evidence: [
+        {
+          time: '09:31',
+          label: 'Ticket macro created',
+          detail: 'Support prepared a response for delayed payment confirmations.',
+        },
+        {
+          time: '09:32',
+          label: 'Contact rate peaked',
+          detail: 'Most tickets reference checkout confirmation latency.',
+        },
+      ],
+      rollback: {
+        label: 'Publish resolved notice',
+        target: 'Support status banner',
+        expectedResult: 'ticket volume returned below target',
+      },
+    },
   ],
 }
 
-export const toolkitMoments: ToolkitMoment[] = [
+export const reviewMotionMoments: ReviewMotionMoment[] = [
   {
-    demoFolder: 'feature-detection',
-    label: 'Capability check',
-    productMoment: 'Browser support gates the motion controls in the header.',
+    label: 'Alert expands into review',
+    productMoment: 'The selected alert keeps its identity as the review opens.',
+    toolkitUse: 'View Transitions Toolkit assigns temporary names to the alert and detail header.',
   },
   {
-    demoFolder: 'navigation-types',
-    label: 'Route intent',
-    productMoment: 'Incident switches are tagged as from, to, and severity types.',
+    label: 'Evidence shifts with context',
+    productMoment: 'Metrics and evidence move together when a different alert is selected.',
+    toolkitUse: 'View Transitions Toolkit keeps the focused evidence panel visually continuous.',
   },
   {
-    demoFolder: 'get-animations',
-    label: 'Animation inventory',
-    productMoment: 'The inspector counts live View Transition animations.',
-  },
-  {
-    demoFolder: 'measure',
-    label: 'Geometry readout',
-    productMoment: 'The detail panel records before and after group bounds.',
-  },
-  {
-    demoFolder: 'optimize',
-    label: 'Group optimization',
-    productMoment: 'Selected transition groups are converted to compositor-safe motion.',
-  },
-  {
-    demoFolder: 'playback-control',
-    label: 'Pause and resume',
-    productMoment: 'Operators can hold a transition to inspect the exact frame.',
-  },
-  {
-    demoFolder: 'scroll-driven-view-transition',
-    label: 'Timeline scrub',
-    productMoment: 'A scrubber drives the active transition through incident states.',
-  },
-]
-
-export const incidentTimeline: Incident[] = [
-  {
-    id: 'checkout-latency',
-    time: '09:41',
-    service: 'Checkout API',
-    title: 'Payment authorization latency',
-    severity: 'critical',
-    status: 'mitigating',
-    impact: '18% checkout sessions delayed',
-    region: 'NA / EU edge',
-    signal: 'p95 4.8s',
-    duration: '23 min',
-    summary:
-      'Authorization calls are queuing behind a retry spike after the latest edge cache rule rollout.',
-    metrics: [
-      { label: 'p95 latency', value: '4.8s', trend: '+312%' },
-      { label: 'error budget', value: '71%', trend: '-9 pts' },
-      { label: 'affected users', value: '42k', trend: '+18k' },
-    ],
-    logs: [
-      {
-        time: '09:41:18',
-        level: 'error',
-        message: 'POST /payments/authorize exceeded retry budget',
-      },
-      {
-        time: '09:40:44',
-        level: 'warn',
-        message: 'Edge cache rule checkout-auth-v7 promoted to 100%',
-      },
-      {
-        time: '09:39:57',
-        level: 'info',
-        message: 'Queue depth crossed adaptive shed threshold',
-      },
-    ],
-    actions: [
-      { label: 'Rollback cache rule', state: 'running' },
-      { label: 'Shift 20% traffic to warm pool', state: 'ready' },
-      { label: 'Notify commerce support', state: 'done' },
-    ],
-    suspects: [
-      { label: 'checkout-auth-v7', confidence: '82%' },
-      { label: 'issuer retry fanout', confidence: '64%' },
-    ],
-  },
-  {
-    id: 'edge-cache',
-    time: '09:27',
-    service: 'Edge Cache',
-    title: 'Regional cache miss surge',
-    severity: 'high',
-    status: 'investigating',
-    impact: 'Product detail pages slower in EU West',
-    region: 'EU West',
-    signal: 'miss rate 38%',
-    duration: '17 min',
-    summary:
-      'A configuration drift between two cache clusters is pushing product pages back to origin.',
-    metrics: [
-      { label: 'cache miss', value: '38%', trend: '+24 pts' },
-      { label: 'origin load', value: '2.3x', trend: '+1.1x' },
-      { label: 'page p75', value: '1.9s', trend: '+680ms' },
-    ],
-    logs: [
-      {
-        time: '09:27:08',
-        level: 'warn',
-        message: 'Cache shard euw-2 rejected signed variant headers',
-      },
-      {
-        time: '09:26:32',
-        level: 'info',
-        message: 'Origin protection rule entered observation mode',
-      },
-      {
-        time: '09:24:51',
-        level: 'warn',
-        message: 'Variant key mismatch detected across clusters',
-      },
-    ],
-    actions: [
-      { label: 'Pin traffic to euw-1', state: 'ready' },
-      { label: 'Compare cache manifests', state: 'running' },
-      { label: 'Freeze rule propagation', state: 'done' },
-    ],
-    suspects: [
-      { label: 'variant header drift', confidence: '74%' },
-      { label: 'stale manifest bundle', confidence: '58%' },
-    ],
-  },
-  {
-    id: 'search-index',
-    time: '08:58',
-    service: 'Search Index',
-    title: 'Index freshness gap',
-    severity: 'medium',
-    status: 'monitoring',
-    impact: 'New inventory delayed in search results',
-    region: 'Global',
-    signal: 'lag 11m',
-    duration: '44 min',
-    summary:
-      'Index workers recovered after compaction pressure, but freshness remains above the target window.',
-    metrics: [
-      { label: 'freshness lag', value: '11m', trend: '-6m' },
-      { label: 'worker drain', value: '91%', trend: '+19 pts' },
-      { label: 'queue size', value: '128k', trend: '-42k' },
-    ],
-    logs: [
-      {
-        time: '08:58:43',
-        level: 'info',
-        message: 'Compaction pressure returned below warning threshold',
-      },
-      {
-        time: '08:55:10',
-        level: 'warn',
-        message: 'Search worker pool scaled from 42 to 64 replicas',
-      },
-      {
-        time: '08:51:34',
-        level: 'info',
-        message: 'Backfill batch inventory-delta-1842 resumed',
-      },
-    ],
-    actions: [
-      { label: 'Keep elevated worker pool', state: 'running' },
-      { label: 'Audit compaction schedule', state: 'ready' },
-      { label: 'Update merchandising ETA', state: 'done' },
-    ],
-    suspects: [
-      { label: 'compaction overlap', confidence: '69%' },
-      { label: 'inventory delta burst', confidence: '47%' },
-    ],
-  },
-  {
-    id: 'identity-rate-limit',
-    time: '08:36',
-    service: 'Identity',
-    title: 'Login rate-limit false positives',
-    severity: 'high',
-    status: 'mitigating',
-    impact: 'Some returning users challenged twice',
-    region: 'APAC mobile',
-    signal: 'challenge +22%',
-    duration: '31 min',
-    summary:
-      'A bot-defense threshold is catching legitimate mobile clients after device fingerprint entropy changed.',
-    metrics: [
-      { label: 'challenge rate', value: '22%', trend: '+14 pts' },
-      { label: 'login success', value: '93%', trend: '-3 pts' },
-      { label: 'support tickets', value: '318', trend: '+96' },
-    ],
-    logs: [
-      {
-        time: '08:36:28',
-        level: 'warn',
-        message: 'Mobile fingerprint score shifted below trust threshold',
-      },
-      {
-        time: '08:33:59',
-        level: 'info',
-        message: 'Bot-defense model bdf-2026-05 entered staged rollout',
-      },
-      {
-        time: '08:32:12',
-        level: 'error',
-        message: 'Login challenge loop detected for trusted session cohort',
-      },
-    ],
-    actions: [
-      { label: 'Relax mobile entropy threshold', state: 'running' },
-      { label: 'Segment trusted cohorts', state: 'ready' },
-      { label: 'Publish support macro', state: 'done' },
-    ],
-    suspects: [
-      { label: 'bdf-2026-05 model', confidence: '77%' },
-      { label: 'SDK fingerprint patch', confidence: '62%' },
-    ],
+    label: 'Rollback resolves the review',
+    productMoment: 'The review changes into a resolved state without losing the incident context.',
+    toolkitUse: 'View Transitions Toolkit wraps the state change and fallback update path.',
   },
 ]

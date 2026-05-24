@@ -8,23 +8,18 @@ the deployed site.
 ## Current Lab
 
 - `apps/web`: React + Vite app deployed to GitHub Pages.
-- `Incident Command Center`: A product-style View Transitions Toolkit demo that
-  folds the upstream demo folders into one incident triage workflow.
+- `Checkout Incident Review`: A focused product-style View Transitions Toolkit
+  demo for opening a payment latency alert, reviewing evidence, and applying a
+  rollback.
 
 The live lab uses:
 
-- feature detection from `view-transitions-toolkit/feature-detection`
-- transition animation inventory, geometry extraction, and group optimization
-  from `view-transitions-toolkit/animations`
-- playback controls from `view-transitions-toolkit/playback-control`
 - temporary transition names from `view-transitions-toolkit/misc`
 - active transition tracking from
   `view-transitions-toolkit/track-active-view-transition`
 
-The product flow maps the upstream `demo/feature-detection`,
-`demo/navigation-types`, `demo/get-animations`, `demo/measure`,
-`demo/optimize`, `demo/playback-control`, and
-`demo/scroll-driven-view-transition` examples into one workspace.
+The product flow intentionally keeps the surface small: alert list, focused
+review, evidence, rollback, and resolved state.
 
 ## Commands
 

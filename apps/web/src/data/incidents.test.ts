@@ -1,55 +1,45 @@
 import { describe, expect, it } from 'vitest'
 import {
-  incidentTimeline,
-  primaryWorkspace,
-  toolkitMoments,
+  checkoutReview,
+  reviewMotionMoments,
 } from './incidents'
 
 describe('incident command data', () => {
-  it('frames Web Labs as one live product workspace', () => {
-    expect(primaryWorkspace).toMatchObject({
-      slug: 'incident-command',
-      title: 'Incident Command Center',
-      status: 'live',
+  it('frames the demo as one checkout incident review', () => {
+    expect(checkoutReview).toMatchObject({
+      slug: 'checkout-incident-review',
+      title: 'Checkout Incident Review',
+      primaryAction: 'Open incident',
+      resolutionAction: 'Apply rollback',
     })
-    expect(primaryWorkspace.capabilities).toEqual(
-      expect.arrayContaining([
-        'feature-detection',
-        'navigation-types',
-        'get-animations',
-        'measure',
-        'optimize',
-        'playback-control',
-        'scroll-driven-view-transition',
-      ]),
-    )
+    expect(checkoutReview.incidents).toHaveLength(3)
+    expect(checkoutReview.incidents[0].id).toBe('checkout-latency')
   })
 
-  it('keeps incidents uniquely selectable and rich enough for product detail', () => {
-    const ids = incidentTimeline.map((incident) => incident.id)
+  it('keeps each incident focused on review evidence and a concrete action', () => {
+    const ids = checkoutReview.incidents.map((incident) => incident.id)
 
-    expect(new Set(ids).size).toBe(incidentTimeline.length)
-    expect(incidentTimeline.length).toBeGreaterThanOrEqual(4)
+    expect(new Set(ids).size).toBe(checkoutReview.incidents.length)
     expect(
-      incidentTimeline.every(
+      checkoutReview.incidents.every(
         (incident) =>
-          incident.logs.length >= 3 &&
-          incident.actions.length >= 2 &&
-          incident.metrics.length >= 3,
+          incident.evidence.length >= 2 &&
+          incident.metrics.length === 2 &&
+          incident.rollback.label,
       ),
     ).toBe(true)
   })
 
-  it('maps the upstream demo folders into one user workflow', () => {
-    expect(toolkitMoments.map((moment) => moment.demoFolder)).toEqual([
-      'feature-detection',
-      'navigation-types',
-      'get-animations',
-      'measure',
-      'optimize',
-      'playback-control',
-      'scroll-driven-view-transition',
+  it('limits toolkit references to product-visible motion moments', () => {
+    expect(reviewMotionMoments.map((moment) => moment.label)).toEqual([
+      'Alert expands into review',
+      'Evidence shifts with context',
+      'Rollback resolves the review',
     ])
-    expect(toolkitMoments.every((moment) => moment.productMoment)).toBe(true)
+    expect(
+      reviewMotionMoments.every((moment) =>
+        moment.toolkitUse.includes('View Transitions Toolkit'),
+      ),
+    ).toBe(true)
   })
 })
