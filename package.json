@@ -1,0 +1,17 @@
+{
+  "name": "web-labs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @web-labs/web",
+    "build": "npm run build -w @web-labs/web",
+    "preview": "npm run preview -w @web-labs/web",
+    "test": "npm run test -w @web-labs/web",
+    "lint": "npm run lint -w @web-labs/web",
+    "typecheck": "npm run typecheck -w @web-labs/web"
+  }
+}
