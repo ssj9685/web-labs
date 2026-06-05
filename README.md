@@ -8,18 +8,20 @@ the deployed site.
 ## Current Lab
 
 - `apps/web`: React + Vite app deployed to GitHub Pages.
-- `Checkout Incident Review`: A focused product-style View Transitions Toolkit
-  demo for opening a payment latency alert, reviewing evidence, and applying a
-  rollback.
+- `Chess Access Lab`: A canvas-rendered chess playground with a live HTML
+  accessibility layer for keyboard and screen reader play.
 
 The live lab uses:
 
-- temporary transition names from `view-transitions-toolkit/misc`
-- active transition tracking from
-  `view-transitions-toolkit/track-active-view-transition`
+- `chess.js` for legal chess rules.
+- WebGPU compatibility-mode detection when available.
+- 2D canvas fallback when WebGPU is unavailable or initialization fails.
+- DOM buttons, `role="grid"`, `role="gridcell"`, and `aria-live` for the
+  accessible board and move announcements.
 
-The product flow intentionally keeps the surface small: alert list, focused
-review, evidence, rollback, and resolved state.
+WebGPU is treated as a progressive enhancement because it is not Baseline
+across the core browser set yet. The accessible DOM board remains active in all
+rendering modes.
 
 ## Commands
 
