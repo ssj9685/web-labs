@@ -8,8 +8,8 @@ the deployed site.
 ## Current Lab
 
 - `apps/web`: React + Vite app deployed to GitHub Pages.
-- `Chess Access Lab`: A canvas-rendered chess playground with a live HTML
-  accessibility layer for keyboard and screen reader play.
+- `Chess Access Lab`: A canvas-rendered chess playground that combines several
+  browser experiments inside one playable product flow.
 
 The live lab uses:
 
@@ -18,6 +18,9 @@ The live lab uses:
 - 2D canvas fallback when WebGPU is unavailable or initialization fails.
 - DOM buttons, `role="grid"`, `role="gridcell"`, and `aria-live` for the
   accessible board and move announcements.
+- View Transition Toolkit feature detection plus typed same-document transition
+  names for square selection, move updates, and move trace entries.
+- A move trace panel that turns chess moves into visible experiment telemetry.
 
 WebGPU is treated as a progressive enhancement because it is not Baseline
 across the core browser set yet. The accessible DOM board remains active in all

@@ -1,5 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
-import { Cpu, Keyboard, Layers3, Volume2 } from 'lucide-react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import {
+  Cpu,
+  GitBranch,
+  History,
+  Keyboard,
+  Layers3,
+  MousePointer2,
+  Volume2,
+} from 'lucide-react'
 import type { Square } from 'chess.js'
 import {
   createAccessibleChessGame,
@@ -16,11 +24,33 @@ import {
   webPlatformCompatibilityNotes,
   type ChessRendererChoice,
 } from './chessRenderer'
+import {
+  buildTransitionName,
+  capabilityRows,
+  describePlaybackState,
+  formatProgress,
+  runViewTransition,
+  transitionTypesForChessMove,
+  type PlaybackState,
+} from '../../lib/viewTransitionLab'
 
 const initialRenderer: ChessRendererChoice = {
   label: '2D canvas fallback',
   mode: '2d-canvas',
   reason: 'Renderer detection pending; 2D canvas is ready.',
+}
+
+type MoveTraceEntry = {
+  from: Square
+  id: string
+  piece: string
+  san: string
+  to: Square
+  transitionTypes: string[]
+}
+
+type ViewTransitionStyle = CSSProperties & {
+  viewTransitionName?: string
 }
 
 const squareFocusDelta = (key: string) => {
@@ -31,6 +61,10 @@ const squareFocusDelta = (key: string) => {
   return 0
 }
 
+const transitionStyle = (name: string): ViewTransitionStyle => ({
+  viewTransitionName: name,
+})
+
 export function ChessPlayground() {
   const [game] = useState(createAccessibleChessGame)
   const [, setVersion] = useState(0)
@@ -40,12 +74,47 @@ export function ChessPlayground() {
   )
   const [renderer, setRenderer] =
     useState<ChessRendererChoice>(initialRenderer)
+  const [moveTrace, setMoveTrace] = useState<MoveTraceEntry[]>([])
+  const [transitionState, setTransitionState] =
+    useState<PlaybackState>('paused')
+  const [lastTransitionTypes, setLastTransitionTypes] = useState<string[]>([
+    'idle',
+  ])
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   const board = getAriaBoard(game)
   const legalDestinations = selectedSquare
     ? getLegalDestinations(game, selectedSquare)
     : []
+  const selectedSquareDetail = selectedSquare
+    ? board.find((square) => square.square === selectedSquare)
+    : null
+  const supportRows = capabilityRows()
+  const transitionProgress =
+    lastTransitionTypes[0] === 'idle'
+      ? 0
+      : transitionState === 'scrubbed'
+        ? 0.5
+        : transitionState === 'running'
+          ? 0.72
+          : 1
+  const experimentRows = [
+    {
+      detail: renderer.reason,
+      label: 'Canvas renderer',
+      value: renderer.label,
+    },
+    {
+      detail: 'DOM grid mirrors every canvas square for assistive technology.',
+      label: 'HTML accessibility',
+      value: `${board.length} grid cells`,
+    },
+    {
+      detail: lastTransitionTypes.join(', '),
+      label: 'View transitions',
+      value: describePlaybackState(transitionState),
+    },
+  ]
 
   useEffect(() => {
     let cancelled = false
@@ -88,6 +157,22 @@ export function ChessPlayground() {
     }
   }, [board, renderer, selectedSquare])
 
+  const commitChessTransition = (types: string[], update: () => void) => {
+    setLastTransitionTypes(types)
+    setTransitionState('running')
+
+    const transition = runViewTransition(types, update)
+
+    if (!transition) {
+      setTransitionState('paused')
+      return
+    }
+
+    void transition.finished.finally(() => {
+      setTransitionState('paused')
+    })
+  }
+
   const focusSquareByDelta = (currentSquare: Square, delta: number) => {
     const currentIndex = board.findIndex((item) => item.square === currentSquare)
     const nextIndex = Math.max(0, Math.min(63, currentIndex + delta))
@@ -102,31 +187,64 @@ export function ChessPlayground() {
   const activateSquare = (square: Square) => {
     if (selectedSquare && selectedSquare !== square) {
       const result = moveBySquares(game, selectedSquare, square)
-      setAnnouncement(result.announcement)
+      const transitionTypes =
+        result.ok && result.from && result.to && result.pieceType
+          ? transitionTypesForChessMove(result.from, result.to, result.pieceType)
+          : ['chess-illegal-move', `from-${selectedSquare}`, `to-${square}`]
+      const moveMetadata =
+        result.ok && result.from && result.to && result.piece
+          ? {
+              from: result.from,
+              piece: result.piece,
+              san: result.san ?? `${result.from}${result.to}`,
+              to: result.to,
+            }
+          : null
 
-      if (result.ok) {
-        setSelectedSquare(null)
-        setVersion((current) => current + 1)
-      }
+      commitChessTransition(transitionTypes, () => {
+        setAnnouncement(result.announcement)
+
+        if (moveMetadata) {
+          setSelectedSquare(null)
+          setMoveTrace((current) => [
+            {
+              from: moveMetadata.from,
+              id: `${current.length + 1}-${moveMetadata.from}-${moveMetadata.to}`,
+              piece: moveMetadata.piece,
+              san: moveMetadata.san,
+              to: moveMetadata.to,
+              transitionTypes,
+            },
+            ...current,
+          ].slice(0, 6))
+          setVersion((current) => current + 1)
+        }
+      })
       return
     }
 
     if (selectedSquare === square) {
-      setSelectedSquare(null)
-      setAnnouncement(`${square} cleared. ${describeTurn(game)}.`)
+      commitChessTransition(['chess-clear', `square-${square}`], () => {
+        setSelectedSquare(null)
+        setAnnouncement(`${square} cleared. ${describeTurn(game)}.`)
+      })
       return
     }
 
     const destinations = getLegalDestinations(game, square)
     if (!destinations.length) {
-      setAnnouncement(`${square} has no legal moves. ${describeTurn(game)}.`)
+      commitChessTransition(['chess-inspect', `square-${square}`], () => {
+        setAnnouncement(`${square} has no legal moves. ${describeTurn(game)}.`)
+      })
       return
     }
 
-    setSelectedSquare(square)
-    setAnnouncement(
-      `${square} selected. Legal moves: ${destinations.join(', ')}.`,
-    )
+    commitChessTransition(['chess-select', `square-${square}`], () => {
+      setSelectedSquare(square)
+      setAnnouncement(
+        `${square} selected. Legal moves: ${destinations.join(', ')}.`,
+      )
+    })
   }
 
   const handleSquareKeyDown = (
@@ -159,7 +277,10 @@ export function ChessPlayground() {
       </div>
 
       <div className="chess-stage">
-        <div className="canvas-panel">
+        <div
+          className="canvas-panel"
+          style={transitionStyle(buildTransitionName('canvas-board'))}
+        >
           <canvas
             aria-hidden="true"
             className="chess-canvas"
@@ -175,12 +296,23 @@ export function ChessPlayground() {
         </div>
 
         <div className="chess-controls">
-          <div className="status-panel">
+          <div
+            className="status-panel"
+            style={transitionStyle(
+              buildTransitionName('position', selectedSquare ?? 'ready'),
+            )}
+          >
             <p className="section-label">Current position</p>
             <strong>{describeTurn(game)}</strong>
             <p role="status" aria-live="polite">
               {announcement}
             </p>
+            {selectedSquareDetail ? (
+              <p className="selected-square-note">
+                {selectedSquareDetail.ariaLabel}; legal moves:{' '}
+                {legalDestinations.join(', ')}
+              </p>
+            ) : null}
           </div>
 
           <div
@@ -202,12 +334,73 @@ export function ChessPlayground() {
                   handleSquareKeyDown(event, square.square)
                 }
                 role="gridcell"
+                style={
+                  selectedSquare === square.square
+                    ? transitionStyle(
+                        buildTransitionName('selected-square', square.square),
+                      )
+                    : undefined
+                }
                 type="button"
               >
                 <span>{square.square}</span>
                 <strong>{square.piece ?? ''}</strong>
               </button>
             ))}
+          </div>
+
+          <div
+            aria-label="Integrated web experiments"
+            className="experiment-panel"
+          >
+            <div className="experiment-heading">
+              <p className="section-label">Experiment stack</p>
+              <strong>{formatProgress(transitionProgress)}</strong>
+            </div>
+
+            <div className="experiment-list">
+              {experimentRows.map((experiment) => (
+                <article key={experiment.label}>
+                  <span>{experiment.label}</span>
+                  <strong>{experiment.value}</strong>
+                  <p>{experiment.detail}</p>
+                </article>
+              ))}
+            </div>
+
+            <div className="support-grid" aria-label="View Transition support">
+              {supportRows.map((row) => (
+                <span
+                  className={row.supported ? 'is-supported' : 'is-fallback'}
+                  key={row.label}
+                >
+                  {row.label}: {row.supported ? 'available' : 'fallback'}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="move-panel">
+            <div className="experiment-heading">
+              <p className="section-label">Move trace</p>
+              <History size={16} aria-hidden="true" />
+            </div>
+
+            {moveTrace.length ? (
+              <ol aria-label="Recorded chess moves" className="move-trace">
+                {moveTrace.map((move) => (
+                  <li key={move.id}>
+                    <strong>{move.piece}</strong>
+                    <span>
+                      {move.from} -&gt; {move.to} ({move.san})
+                    </span>
+                    <code>{move.transitionTypes.join(', ')}</code>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="empty-trace">No moves yet</p>
+            )}
           </div>
         </div>
       </div>
@@ -224,12 +417,24 @@ export function ChessPlayground() {
           <p>{webPlatformCompatibilityNotes.accessibility.fallback}.</p>
         </article>
         <article>
+          <GitBranch size={18} aria-hidden="true" />
+          <strong>View Transition flow</strong>
+          <p>
+            Selection, moves, and trace updates share typed transition names.
+          </p>
+        </article>
+        <article>
           <Volume2 size={18} aria-hidden="true" />
           <strong>2D canvas fallback</strong>
           <p>
             WebGPU is used when available; the same accessible DOM board remains
             active.
           </p>
+        </article>
+        <article>
+          <MousePointer2 size={18} aria-hidden="true" />
+          <strong>Pointer and keyboard parity</strong>
+          <p>Click or press Space/Enter on the same DOM-backed squares.</p>
         </article>
       </div>
     </section>

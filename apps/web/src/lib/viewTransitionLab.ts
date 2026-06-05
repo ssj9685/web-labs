@@ -35,11 +35,11 @@ export const describePlaybackState = (state: PlaybackState) => {
   return 'Transition is playing'
 }
 
-export const transitionTypesForIncident = (
-  fromId: string,
-  toId: string,
-  severity: string,
-) => [`from-${fromId}`, `to-${toId}`, `severity-${severity}`]
+export const transitionTypesForChessMove = (
+  fromSquare: string,
+  toSquare: string,
+  pieceType: string,
+) => ['chess-move', `from-${fromSquare}`, `to-${toSquare}`, `piece-${pieceType}`]
 
 export const formatProgress = (progress: number) => {
   const boundedProgress = Math.max(0, Math.min(1, progress))
@@ -49,3 +49,20 @@ export const formatProgress = (progress: number) => {
 
 export const supportsSameDocumentTransition = () =>
   typeof document !== 'undefined' && 'startViewTransition' in document
+
+export const runViewTransition = (
+  types: string[],
+  update: () => void,
+): ViewTransition | null => {
+  if (!supportsSameDocumentTransition()) {
+    update()
+
+    return null
+  }
+
+  const transition = document.startViewTransition(update)
+
+  types.forEach((type) => transition.types?.add(type))
+
+  return transition
+}

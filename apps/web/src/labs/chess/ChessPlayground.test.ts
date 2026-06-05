@@ -108,6 +108,58 @@ describe('ChessPlayground accessibility', () => {
     )
   })
 
+  it('combines the chess board with an experiment stack and move trace', async () => {
+    await renderChess()
+
+    expect(container?.textContent).toContain('Experiment stack')
+    expect(container?.textContent).toContain('View transitions')
+    expect(container?.textContent).toContain('Move trace')
+    expect(container?.textContent).toContain('No moves yet')
+
+    await pressSquare('e2', ' ')
+    await pressSquare('e4', 'Enter')
+
+    expect(container?.textContent).toContain('white pawn')
+    expect(container?.textContent).toContain('e2 -> e4')
+    expect(container?.textContent).toContain('chess-move')
+  })
+
+  it('adds View Transition types for square selection and moves when supported', async () => {
+    const add = vi.fn()
+    const startViewTransition = vi
+      .fn()
+      .mockImplementation((callback: () => void) => {
+        callback()
+
+        return {
+          finished: Promise.resolve(),
+          ready: Promise.resolve(),
+          types: { add },
+          updateCallbackDone: Promise.resolve(),
+          skipTransition: vi.fn(),
+        }
+      })
+
+    Object.defineProperty(document, 'startViewTransition', {
+      configurable: true,
+      value: startViewTransition,
+    })
+
+    await renderChess()
+    await pressSquare('e2', ' ')
+    await pressSquare('e4', 'Enter')
+
+    Reflect.deleteProperty(document, 'startViewTransition')
+
+    expect(startViewTransition).toHaveBeenCalled()
+    expect(add).toHaveBeenCalledWith('chess-select')
+    expect(add).toHaveBeenCalledWith('square-e2')
+    expect(add).toHaveBeenCalledWith('chess-move')
+    expect(add).toHaveBeenCalledWith('from-e2')
+    expect(add).toHaveBeenCalledWith('to-e4')
+    expect(add).toHaveBeenCalledWith('piece-pawn')
+  })
+
   it('reports the canvas fallback when WebGPU painting cannot acquire a render surface', async () => {
     const requestDevice = vi.fn().mockResolvedValue({})
     const requestAdapter = vi.fn().mockResolvedValue({ requestDevice })

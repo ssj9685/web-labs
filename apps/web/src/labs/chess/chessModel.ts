@@ -11,7 +11,13 @@ export type AriaSquare = {
 
 export type MoveResult = {
   announcement: string
+  color?: 'black' | 'white'
+  from?: Square
   ok: boolean
+  piece?: string
+  pieceType?: string
+  san?: string
+  to?: Square
 }
 
 const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const
@@ -85,7 +91,13 @@ export const moveBySquares = (
       announcement: `${piece[0].toUpperCase()}${piece.slice(
         1,
       )} moved from ${from} to ${to}. ${nextTurn} to move.`,
+      color: colorNames[move.color],
+      from: move.from,
       ok: true,
+      piece,
+      pieceType: pieceNames[move.piece],
+      san: move.san,
+      to: move.to,
     }
   } catch {
     return {

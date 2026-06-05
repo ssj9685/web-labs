@@ -36,6 +36,14 @@ describe('accessible chess model', () => {
     expect(result.announcement).toBe(
       'White pawn moved from e2 to e4. Black to move.',
     )
+    expect(result).toMatchObject({
+      color: 'white',
+      from: 'e2',
+      piece: 'white pawn',
+      pieceType: 'pawn',
+      san: 'e4',
+      to: 'e4',
+    })
     expect(getAriaBoard(game).find((square) => square.square === 'e4')).toMatchObject({
       ariaLabel: 'e4 white pawn',
       piece: 'P',
