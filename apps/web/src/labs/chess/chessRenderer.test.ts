@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  buildChessVertexData,
   chooseChessRenderer,
   webPlatformCompatibilityNotes,
 } from './chessRenderer'
+import { createAccessibleChessGame, getAriaBoard } from './chessModel'
 
 describe('chess renderer selection', () => {
   it('falls back to 2D canvas when WebGPU is unavailable', async () => {
@@ -34,5 +36,14 @@ describe('chess renderer selection', () => {
       '2D canvas renderer with the same DOM accessibility layer',
     )
     expect(webPlatformCompatibilityNotes.accessibility.status).toBe('baseline')
+  })
+
+  it('builds WebGPU geometry for board squares and visible piece markers', () => {
+    const board = getAriaBoard(createAccessibleChessGame())
+    const geometry = buildChessVertexData(board, null)
+
+    expect(geometry.squareCount).toBe(64)
+    expect(geometry.pieceCount).toBe(32)
+    expect(geometry.vertexData.length).toBeGreaterThan(64 * 6 * 5)
   })
 })

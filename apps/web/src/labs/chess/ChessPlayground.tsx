@@ -12,6 +12,7 @@ import {
   chooseChessRenderer,
   paintChessBoard2d,
   paintChessBoardWebGpu,
+  webGpuRenderFallbackChoice,
   webPlatformCompatibilityNotes,
   type ChessRendererChoice,
 } from './chessRenderer'
@@ -73,6 +74,8 @@ export function ChessPlayground() {
           renderer.device,
         )
         if (painted || cancelled) return
+
+        setRenderer(webGpuRenderFallbackChoice)
       }
 
       paintChessBoard2d(canvas, board, selectedSquare)

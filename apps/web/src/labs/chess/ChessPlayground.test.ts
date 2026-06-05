@@ -7,23 +7,26 @@ declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean
 }
 
-let container: HTMLDivElement
+let container: HTMLDivElement | null = null
 let getContextSpy: ReturnType<typeof vi.spyOn>
-let root: Root
+let root: Root | null = null
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const renderChess = async () => {
   container = document.createElement('div')
   document.body.appendChild(container)
-  root = createRoot(container)
+  const currentRoot = createRoot(container)
+  root = currentRoot
 
   await act(async () => {
-    root.render(createElement(ChessPlayground))
+    currentRoot.render(createElement(ChessPlayground))
   })
 }
 
 const squareButton = (square: string) => {
+  if (!container) throw new Error('Chess playground is not rendered')
+
   const element = container.querySelector<HTMLButtonElement>(
     `[data-square="${square}"]`,
   )
@@ -39,50 +42,93 @@ const pressSquare = async (square: string, key: string) => {
   })
 }
 
+const flushAsyncEffects = async () => {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+}
+
 describe('ChessPlayground accessibility', () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     getContextSpy = vi
       .spyOn(HTMLCanvasElement.prototype, 'getContext')
       .mockReturnValue(null)
-    await renderChess()
   })
 
   afterEach(() => {
-    act(() => root.unmount())
+    if (root) {
+      act(() => root?.unmount())
+      root = null
+    }
     getContextSpy.mockRestore()
-    container.remove()
+    container?.remove()
+    container = null
+    Reflect.deleteProperty(navigator, 'gpu')
   })
 
-  it('renders a canvas visual board with a semantic board for assistive tech', () => {
-    expect(container.querySelector('canvas')?.getAttribute('aria-hidden')).toBe(
+  it('renders a canvas visual board with a semantic board for assistive tech', async () => {
+    await renderChess()
+
+    expect(container?.querySelector('canvas')?.getAttribute('aria-hidden')).toBe(
       'true',
     )
     expect(
       container
-        .querySelector('[role="grid"]')
+        ?.querySelector('[role="grid"]')
         ?.getAttribute('aria-label'),
     ).toBe('Accessible chess board')
-    expect(container.querySelectorAll('[role="gridcell"]')).toHaveLength(64)
+    expect(container?.querySelectorAll('[role="gridcell"]')).toHaveLength(64)
     expect(squareButton('e2').getAttribute('aria-label')).toBe('e2 white pawn')
   })
 
   it('moves a piece with keyboard commands and announces the result', async () => {
+    await renderChess()
+
     await pressSquare('e2', ' ')
     expect(squareButton('e2').getAttribute('aria-selected')).toBe('true')
 
     await pressSquare('e4', 'Enter')
 
     expect(squareButton('e4').getAttribute('aria-label')).toBe('e4 white pawn')
-    expect(container.querySelector('[role="status"]')?.textContent).toBe(
+    expect(container?.querySelector('[role="status"]')?.textContent).toBe(
       'White pawn moved from e2 to e4. Black to move.',
     )
   })
 
-  it('shows the active rendering path and fallback baseline note', () => {
-    expect(container.textContent).toContain('Renderer')
-    expect(container.textContent).toContain('2D canvas fallback')
-    expect(container.textContent).toContain(
+  it('shows the active rendering path and fallback baseline note', async () => {
+    await renderChess()
+
+    expect(container?.textContent).toContain('Renderer')
+    expect(container?.textContent).toContain('2D canvas fallback')
+    expect(container?.textContent).toContain(
       'WebGPU is used when available; the same accessible DOM board remains active.',
+    )
+  })
+
+  it('reports the canvas fallback when WebGPU painting cannot acquire a render surface', async () => {
+    const requestDevice = vi.fn().mockResolvedValue({})
+    const requestAdapter = vi.fn().mockResolvedValue({ requestDevice })
+
+    Object.defineProperty(navigator, 'gpu', {
+      configurable: true,
+      value: { requestAdapter },
+    })
+
+    await renderChess()
+    await flushAsyncEffects()
+
+    expect(requestAdapter).toHaveBeenCalledWith({
+      featureLevel: 'compatibility',
+      powerPreference: 'high-performance',
+    })
+    expect(container?.querySelector('.renderer-badge strong')?.textContent).toBe(
+      '2D canvas fallback',
+    )
+    expect(container?.textContent).toContain(
+      'WebGPU render surface unavailable; using canvas fallback.',
     )
   })
 })

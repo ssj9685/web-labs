@@ -24,6 +24,25 @@ type NavigatorWithChessGpu = Navigator & {
   gpu?: ChessGpuLike
 }
 
+type Rgb = readonly [number, number, number]
+
+type ChessVertexGeometry = {
+  pieceCount: number
+  squareCount: number
+  vertexData: Float32Array
+}
+
+type ChessSquarePlane = {
+  bottom: number
+  centerX: number
+  centerY: number
+  height: number
+  left: number
+  right: number
+  top: number
+  width: number
+}
+
 export const webPlatformCompatibilityNotes = {
   accessibility: {
     fallback: 'Native DOM grid, buttons, keyboard handlers, and aria-live status',
@@ -34,6 +53,12 @@ export const webPlatformCompatibilityNotes = {
     status: 'limited',
   },
 } as const
+
+export const webGpuRenderFallbackChoice: ChessRendererChoice = {
+  label: '2D canvas fallback',
+  mode: '2d-canvas',
+  reason: 'WebGPU render surface unavailable; using canvas fallback.',
+}
 
 export const getNavigatorGpu = () =>
   typeof navigator === 'undefined'
@@ -105,6 +130,327 @@ const setupCanvas = (canvas: HTMLCanvasElement) => {
   canvas.height = Math.floor(height * dpr)
 
   return { dpr, height, width }
+}
+
+const getWebGpuSquarePlane = (index: number): ChessSquarePlane => {
+  const file = index % 8
+  const rank = Math.floor(index / 8)
+  const left = -0.82 + file * 0.205 + rank * 0.018
+  const top = 0.7 - rank * 0.17 + file * 0.008
+  const right = left + 0.19
+  const bottom = top - 0.15
+
+  return {
+    bottom,
+    centerX: (left + right) / 2,
+    centerY: (top + bottom) / 2,
+    height: top - bottom,
+    left,
+    right,
+    top,
+    width: right - left,
+  }
+}
+
+const pushVertex = (
+  vertices: number[],
+  x: number,
+  y: number,
+  color: Rgb,
+) => {
+  vertices.push(x, y, ...color)
+}
+
+const pushTriangle = (
+  vertices: number[],
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+  color: Rgb,
+) => {
+  pushVertex(vertices, ax, ay, color)
+  pushVertex(vertices, bx, by, color)
+  pushVertex(vertices, cx, cy, color)
+}
+
+const pushQuad = (
+  vertices: number[],
+  left: number,
+  top: number,
+  right: number,
+  bottom: number,
+  color: Rgb,
+) => {
+  pushTriangle(vertices, left, top, right, top, left, bottom, color)
+  pushTriangle(vertices, left, bottom, right, top, right, bottom, color)
+}
+
+const pushDiamond = (
+  vertices: number[],
+  centerX: number,
+  centerY: number,
+  radiusX: number,
+  radiusY: number,
+  color: Rgb,
+) => {
+  pushTriangle(
+    vertices,
+    centerX,
+    centerY + radiusY,
+    centerX + radiusX,
+    centerY,
+    centerX,
+    centerY - radiusY,
+    color,
+  )
+  pushTriangle(
+    vertices,
+    centerX,
+    centerY - radiusY,
+    centerX - radiusX,
+    centerY,
+    centerX,
+    centerY + radiusY,
+    color,
+  )
+}
+
+const pushDisc = (
+  vertices: number[],
+  centerX: number,
+  centerY: number,
+  radiusX: number,
+  radiusY: number,
+  color: Rgb,
+  segments = 14,
+) => {
+  for (let index = 0; index < segments; index += 1) {
+    const current = (Math.PI * 2 * index) / segments
+    const next = (Math.PI * 2 * (index + 1)) / segments
+
+    pushTriangle(
+      vertices,
+      centerX,
+      centerY,
+      centerX + Math.cos(current) * radiusX,
+      centerY + Math.sin(current) * radiusY,
+      centerX + Math.cos(next) * radiusX,
+      centerY + Math.sin(next) * radiusY,
+      color,
+    )
+  }
+}
+
+const pushPieceMarker = (
+  vertices: number[],
+  plane: ChessSquarePlane,
+  piece: string,
+  selected: boolean,
+) => {
+  const isWhite = piece === piece.toUpperCase()
+  const rim: Rgb = selected
+    ? [0.39, 0.87, 0.61]
+    : isWhite
+      ? [0.1, 0.14, 0.11]
+      : [0.83, 0.91, 0.75]
+  const fill: Rgb = isWhite ? [0.95, 0.9, 0.76] : [0.05, 0.07, 0.06]
+  const highlight: Rgb = isWhite ? [1, 0.97, 0.84] : [0.48, 0.62, 0.45]
+  const shadow: Rgb = [0.03, 0.05, 0.04]
+  const centerX = plane.centerX
+  const centerY = plane.centerY + plane.height * 0.02
+  const type = piece.toLowerCase()
+
+  pushDisc(
+    vertices,
+    centerX + plane.width * 0.08,
+    centerY - plane.height * 0.18,
+    plane.width * 0.32,
+    plane.height * 0.18,
+    shadow,
+    12,
+  )
+  pushDisc(
+    vertices,
+    centerX,
+    centerY - plane.height * 0.09,
+    plane.width * 0.31,
+    plane.height * 0.24,
+    rim,
+    16,
+  )
+  pushDisc(
+    vertices,
+    centerX,
+    centerY - plane.height * 0.08,
+    plane.width * 0.23,
+    plane.height * 0.17,
+    fill,
+    16,
+  )
+  pushQuad(
+    vertices,
+    centerX - plane.width * 0.14,
+    centerY + plane.height * 0.16,
+    centerX + plane.width * 0.14,
+    centerY - plane.height * 0.08,
+    fill,
+  )
+
+  if (type === 'p') {
+    pushDisc(
+      vertices,
+      centerX,
+      centerY + plane.height * 0.22,
+      plane.width * 0.13,
+      plane.height * 0.11,
+      highlight,
+      12,
+    )
+    return
+  }
+
+  if (type === 'r') {
+    pushQuad(
+      vertices,
+      centerX - plane.width * 0.2,
+      centerY + plane.height * 0.28,
+      centerX + plane.width * 0.2,
+      centerY + plane.height * 0.14,
+      highlight,
+    )
+    pushQuad(
+      vertices,
+      centerX - plane.width * 0.23,
+      centerY + plane.height * 0.35,
+      centerX - plane.width * 0.11,
+      centerY + plane.height * 0.24,
+      highlight,
+    )
+    pushQuad(
+      vertices,
+      centerX + plane.width * 0.11,
+      centerY + plane.height * 0.35,
+      centerX + plane.width * 0.23,
+      centerY + plane.height * 0.24,
+      highlight,
+    )
+    return
+  }
+
+  if (type === 'n') {
+    pushDiamond(
+      vertices,
+      centerX + plane.width * 0.04,
+      centerY + plane.height * 0.23,
+      plane.width * 0.19,
+      plane.height * 0.17,
+      highlight,
+    )
+    pushQuad(
+      vertices,
+      centerX - plane.width * 0.2,
+      centerY + plane.height * 0.28,
+      centerX + plane.width * 0.02,
+      centerY + plane.height * 0.15,
+      highlight,
+    )
+    return
+  }
+
+  if (type === 'b') {
+    pushDiamond(
+      vertices,
+      centerX,
+      centerY + plane.height * 0.24,
+      plane.width * 0.16,
+      plane.height * 0.2,
+      highlight,
+    )
+    return
+  }
+
+  if (type === 'q') {
+    pushDisc(
+      vertices,
+      centerX - plane.width * 0.16,
+      centerY + plane.height * 0.27,
+      plane.width * 0.07,
+      plane.height * 0.07,
+      highlight,
+      10,
+    )
+    pushDisc(
+      vertices,
+      centerX,
+      centerY + plane.height * 0.34,
+      plane.width * 0.08,
+      plane.height * 0.08,
+      highlight,
+      10,
+    )
+    pushDisc(
+      vertices,
+      centerX + plane.width * 0.16,
+      centerY + plane.height * 0.27,
+      plane.width * 0.07,
+      plane.height * 0.07,
+      highlight,
+      10,
+    )
+    return
+  }
+
+  pushQuad(
+    vertices,
+    centerX - plane.width * 0.06,
+    centerY + plane.height * 0.38,
+    centerX + plane.width * 0.06,
+    centerY + plane.height * 0.12,
+    highlight,
+  )
+  pushQuad(
+    vertices,
+    centerX - plane.width * 0.18,
+    centerY + plane.height * 0.28,
+    centerX + plane.width * 0.18,
+    centerY + plane.height * 0.2,
+    highlight,
+  )
+}
+
+export const buildChessVertexData = (
+  board: AriaSquare[],
+  selectedSquare: string | null,
+): ChessVertexGeometry => {
+  const vertices: number[] = []
+  let pieceCount = 0
+
+  board.forEach((square, index) => {
+    const plane = getWebGpuSquarePlane(index)
+    const selected = square.square === selectedSquare
+    const light = square.color === 'light'
+    const color: Rgb = selected
+      ? [0.38, 0.83, 0.62]
+      : light
+        ? [0.82, 0.89, 0.78]
+        : [0.27, 0.38, 0.29]
+
+    pushQuad(vertices, plane.left, plane.top, plane.right, plane.bottom, color)
+
+    if (square.piece) {
+      pieceCount += 1
+      pushPieceMarker(vertices, plane, square.piece, selected)
+    }
+  })
+
+  return {
+    pieceCount,
+    squareCount: board.length,
+    vertexData: new Float32Array(vertices),
+  }
 }
 
 export const paintChessBoard2d = (
@@ -216,34 +562,7 @@ export const paintChessBoardWebGpu = async (
     getCurrentTexture: () => { createView: () => unknown }
   }
   const format = gpu.getPreferredCanvasFormat?.() ?? 'bgra8unorm'
-  const vertices: number[] = []
-
-  board.forEach((square, index) => {
-    const file = index % 8
-    const rank = Math.floor(index / 8)
-    const x0 = -0.82 + file * 0.205 + rank * 0.018
-    const y0 = 0.7 - rank * 0.17 + file * 0.008
-    const x1 = x0 + 0.19
-    const y1 = y0 - 0.15
-    const selected = square.square === selectedSquare
-    const light = square.color === 'light'
-    const color = selected
-      ? [0.38, 0.83, 0.62]
-      : light
-        ? [0.82, 0.89, 0.78]
-        : [0.27, 0.38, 0.29]
-
-    vertices.push(
-      x0, y0, ...color,
-      x1, y0, ...color,
-      x0, y1, ...color,
-      x0, y1, ...color,
-      x1, y0, ...color,
-      x1, y1, ...color,
-    )
-  })
-
-  const vertexData = new Float32Array(vertices)
+  const { vertexData } = buildChessVertexData(board, selectedSquare)
   const shader = gpuDevice.createShaderModule({
     code: `
       struct VertexOut {
