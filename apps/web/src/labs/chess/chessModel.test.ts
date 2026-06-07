@@ -50,6 +50,24 @@ describe('accessible chess model', () => {
     })
   })
 
+  it('reports checkmate and the winning side', () => {
+    const game = createAccessibleChessGame()
+
+    moveBySquares(game, 'f2', 'f3')
+    moveBySquares(game, 'e7', 'e5')
+    moveBySquares(game, 'g2', 'g4')
+    const result = moveBySquares(game, 'd8', 'h4')
+
+    expect(result).toMatchObject({
+      checkmate: true,
+      gameOver: true,
+      ok: true,
+      san: 'Qh4#',
+      winner: 'black',
+    })
+    expect(result.announcement).toBe('Checkmate. Black wins with Qh4#.')
+  })
+
   it('rejects illegal moves without mutating the board', () => {
     const game = createAccessibleChessGame()
     const result = moveBySquares(game, 'e2', 'e5')

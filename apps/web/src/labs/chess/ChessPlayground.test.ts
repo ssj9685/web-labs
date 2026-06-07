@@ -42,6 +42,24 @@ const pressSquare = async (square: string, key: string) => {
   })
 }
 
+const touchSquare = async (square: string) => {
+  const element = squareButton(square)
+
+  const touchStart = new Event('touchstart', {
+    bubbles: true,
+    cancelable: true,
+  })
+  const touchEnd = new Event('touchend', {
+    bubbles: true,
+    cancelable: true,
+  })
+
+  await act(async () => {
+    element.dispatchEvent(touchStart)
+    element.dispatchEvent(touchEnd)
+  })
+}
+
 const flushAsyncEffects = async () => {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -66,6 +84,7 @@ describe('ChessPlayground accessibility', () => {
     getContextSpy.mockRestore()
     container?.remove()
     container = null
+    Reflect.deleteProperty(window, 'matchMedia')
     Reflect.deleteProperty(navigator, 'gpu')
   })
 
@@ -98,21 +117,20 @@ describe('ChessPlayground accessibility', () => {
     )
   })
 
-  it('shows the active rendering path and fallback baseline note', async () => {
+  it('shows the active 3D rendering path and baseline note', async () => {
     await renderChess()
 
     expect(container?.textContent).toContain('Renderer')
-    expect(container?.textContent).toContain('2D canvas fallback')
+    expect(container?.textContent).toContain('3D renderer unavailable')
     expect(container?.textContent).toContain(
-      'WebGPU is used when available; the same accessible DOM board remains active.',
+      'Native HTML grid, buttons, keyboard handlers, and aria-live status layered over 3D or shown as a visible 2D board.',
     )
   })
 
-  it('combines the chess board with an experiment stack and move trace', async () => {
+  it('keeps the right rail focused on status and move trace', async () => {
     await renderChess()
 
-    expect(container?.textContent).toContain('Experiment stack')
-    expect(container?.textContent).toContain('View transitions')
+    expect(container?.textContent).not.toContain('Experiment stack')
     expect(container?.textContent).toContain('Move trace')
     expect(container?.textContent).toContain('No moves yet')
 
@@ -121,7 +139,92 @@ describe('ChessPlayground accessibility', () => {
 
     expect(container?.textContent).toContain('white pawn')
     expect(container?.textContent).toContain('e2 -> e4')
-    expect(container?.textContent).toContain('chess-move')
+    expect(container?.querySelector('.move-trace code')).toBeNull()
+  })
+
+  it('keeps the mobile history sheet open during board taps and closes from the close button', async () => {
+    await renderChess()
+
+    const stage = container?.querySelector('.chess-stage')
+    const historyToggle = container?.querySelector<HTMLButtonElement>(
+      '.history-toggle',
+    )
+    const movePanel = container?.querySelector('.move-panel')
+    const closeButton = container?.querySelector<HTMLButtonElement>(
+      '.move-panel-close',
+    )
+
+    expect(stage).not.toBeNull()
+    expect(historyToggle).not.toBeNull()
+    expect(movePanel).not.toBeNull()
+    expect(closeButton).not.toBeNull()
+
+    await act(async () => {
+      historyToggle?.click()
+    })
+    expect(stage?.classList.contains('is-history-open')).toBe(true)
+
+    await act(async () => {
+      movePanel?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    })
+    expect(stage?.classList.contains('is-history-open')).toBe(true)
+
+    await act(async () => {
+      document.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    })
+    expect(stage?.classList.contains('is-history-open')).toBe(true)
+
+    await act(async () => {
+      closeButton?.click()
+    })
+    expect(stage?.classList.contains('is-history-open')).toBe(false)
+  })
+
+  it('cycles the 3D camera view from the board controls', async () => {
+    await renderChess()
+
+    const viewToggle = container?.querySelector<HTMLButtonElement>('.view-toggle')
+
+    expect(viewToggle).not.toBeNull()
+    expect(viewToggle?.getAttribute('aria-label')).toContain('White view')
+    expect(viewToggle?.textContent).toContain('White')
+
+    await act(async () => {
+      viewToggle?.click()
+    })
+    expect(viewToggle?.getAttribute('aria-label')).toContain('Black view')
+    expect(viewToggle?.textContent).toContain('Black')
+
+    await act(async () => {
+      viewToggle?.click()
+    })
+    expect(viewToggle?.getAttribute('aria-label')).toContain('Top view')
+    expect(viewToggle?.textContent).toContain('Top')
+  })
+
+  it('toggles constrained orbit mode from the board controls', async () => {
+    await renderChess()
+
+    const stagePanel = container?.querySelector('.canvas-panel')
+    const orbitToggle =
+      container?.querySelector<HTMLButtonElement>('.orbit-toggle')
+    const viewToggle = container?.querySelector<HTMLButtonElement>('.view-toggle')
+
+    expect(stagePanel).not.toBeNull()
+    expect(orbitToggle).not.toBeNull()
+    expect(orbitToggle?.getAttribute('aria-pressed')).toBe('false')
+
+    await act(async () => {
+      orbitToggle?.click()
+    })
+    expect(orbitToggle?.getAttribute('aria-pressed')).toBe('true')
+    expect(stagePanel?.classList.contains('is-orbiting')).toBe(true)
+
+    await act(async () => {
+      viewToggle?.click()
+    })
+    expect(orbitToggle?.getAttribute('aria-pressed')).toBe('false')
+    expect(stagePanel?.classList.contains('is-orbiting')).toBe(false)
   })
 
   it('adds View Transition types for square selection and moves when supported', async () => {
@@ -158,29 +261,72 @@ describe('ChessPlayground accessibility', () => {
     expect(add).toHaveBeenCalledWith('from-e2')
     expect(add).toHaveBeenCalledWith('to-e4')
     expect(add).toHaveBeenCalledWith('piece-pawn')
+    expect(add).toHaveBeenCalledWith('move-trace-update')
   })
 
-  it('reports the canvas fallback when WebGPU painting cannot acquire a render surface', async () => {
-    const requestDevice = vi.fn().mockResolvedValue({})
-    const requestAdapter = vi.fn().mockResolvedValue({ requestDevice })
+  it('skips View Transition capture on compact touch viewports', async () => {
+    const startViewTransition = vi.fn()
 
-    Object.defineProperty(navigator, 'gpu', {
+    Object.defineProperty(document, 'startViewTransition', {
       configurable: true,
-      value: { requestAdapter },
+      value: startViewTransition,
+    })
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        addEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+        matches: query.includes('max-width') || query.includes('pointer'),
+        media: query,
+        onchange: null,
+        removeEventListener: vi.fn(),
+      })),
     })
 
     await renderChess()
+    await touchSquare('e2')
+    await touchSquare('e4')
+
+    Reflect.deleteProperty(document, 'startViewTransition')
+
+    expect(startViewTransition).not.toHaveBeenCalled()
+    expect(squareButton('e4').getAttribute('aria-label')).toBe('e4 white pawn')
+  })
+
+  it('shows a checkmate celebration banner when the game ends', async () => {
+    await renderChess()
+
+    await pressSquare('f2', ' ')
+    await pressSquare('f3', 'Enter')
+    await pressSquare('e7', ' ')
+    await pressSquare('e5', 'Enter')
+    await pressSquare('g2', ' ')
+    await pressSquare('g4', 'Enter')
+    await pressSquare('d8', ' ')
+    await pressSquare('h4', 'Enter')
+
+    expect(container?.textContent).toContain('Checkmate')
+    expect(container?.textContent).toContain('Black wins')
+    expect(container?.textContent).toContain('Finished by Qh4#')
+    expect(container?.querySelector('.checkmate-celebration')).not.toBeNull()
+    expect(container?.querySelectorAll('.firework-field span')).toHaveLength(18)
+  })
+
+  it('keeps the HTML chess layer available when 3D rendering is unavailable', async () => {
+    await renderChess()
     await flushAsyncEffects()
 
-    expect(requestAdapter).toHaveBeenCalledWith({
-      featureLevel: 'compatibility',
-      powerPreference: 'high-performance',
-    })
-    expect(container?.querySelector('.renderer-badge strong')?.textContent).toBe(
-      '2D canvas fallback',
-    )
+    expect(container?.querySelector('.board-access-layer')).not.toBeNull()
+    expect(
+      container?.querySelector('.board-access-layer.is-2d-fallback'),
+    ).not.toBeNull()
+    expect(squareButton('e2').textContent).toContain('♙')
+    expect(container?.querySelector('[role="grid"]')).not.toBeNull()
     expect(container?.textContent).toContain(
-      'WebGPU render surface unavailable; using canvas fallback.',
+      'WebGL context could not be created; HTML chess controls remain active.',
+    )
+    expect(container?.querySelector('.renderer-badge strong')?.textContent).toBe(
+      '3D renderer unavailable',
     )
   })
 })

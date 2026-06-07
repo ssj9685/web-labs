@@ -40,14 +40,14 @@ describe('Web Labs app shell', () => {
   it('opens on the accessible chess playground', () => {
     expect(container.querySelector('h1')?.textContent).toBe('Chess Access Lab')
     expect(container.textContent).toContain(
-      'Canvas-rendered chess with a live HTML accessibility layer.',
+      'A single 3D chess board with real piece assets',
     )
     expect(container.querySelector('[role="grid"]')).not.toBeNull()
   })
 
-  it('documents WebGPU enhancement without making it required for play', () => {
-    expect(container.textContent).toContain('WebGPU first')
-    expect(container.textContent).toContain('2D canvas fallback')
-    expect(container.textContent).toContain('Keyboard and screen reader ready')
+  it('documents explicit 3D rendering with accessible HTML controls', () => {
+    expect(container.textContent).toContain('3D when available')
+    expect(container.textContent).toContain('Asset source')
+    expect(container.textContent).toContain('HTML in the board')
   })
 })

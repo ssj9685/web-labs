@@ -13,10 +13,12 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
+    "@types/three": "^0.184.1",
     "chess.js": "^1.4.0",
     "lucide-react": "^0.562.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "three": "^0.184.0",
     "view-transitions-toolkit": "^1.0.0"
   },
   "devDependencies": {

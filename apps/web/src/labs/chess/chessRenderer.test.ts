@@ -1,49 +1,53 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
-  buildChessVertexData,
-  chooseChessRenderer,
+  chessSquares,
+  cameraViewLabels,
+  initialThreeRenderer,
+  nextCameraView,
+  squareToPosition,
+  threeChessAssetInfo,
   webPlatformCompatibilityNotes,
 } from './chessRenderer'
-import { createAccessibleChessGame, getAriaBoard } from './chessModel'
 
-describe('chess renderer selection', () => {
-  it('falls back to 2D canvas when WebGPU is unavailable', async () => {
-    const renderer = await chooseChessRenderer(undefined)
-
-    expect(renderer.mode).toBe('2d-canvas')
-    expect(renderer.label).toBe('2D canvas fallback')
-    expect(renderer.reason).toContain('WebGPU unavailable')
+describe('3D chess renderer metadata', () => {
+  it('starts in an explicit 3D asset loading state', () => {
+    expect(initialThreeRenderer.mode).toBe('three-loading')
+    expect(initialThreeRenderer.label).toBe('3D assets loading')
+    expect(initialThreeRenderer.reason).toContain('Poly Haven chess set')
   })
 
-  it('requests a WebGPU compatibility adapter before using GPU rendering', async () => {
-    const requestDevice = vi.fn().mockResolvedValue({ queue: {} })
-    const requestAdapter = vi.fn().mockResolvedValue({ requestDevice })
-
-    const renderer = await chooseChessRenderer({ requestAdapter })
-
-    expect(requestAdapter).toHaveBeenCalledWith({
-      featureLevel: 'compatibility',
-      powerPreference: 'high-performance',
-    })
-    expect(requestDevice).toHaveBeenCalled()
-    expect(renderer.mode).toBe('webgpu')
-    expect(renderer.label).toBe('WebGPU compatibility mode')
+  it('documents the imported chess asset and local effect textures', () => {
+    expect(threeChessAssetInfo.label).toBe('Poly Haven Chess Set')
+    expect(threeChessAssetInfo.author).toBe('Riley Queen')
+    expect(threeChessAssetInfo.assetUrl).toBe(
+      'https://polyhaven.com/a/chess_set',
+    )
   })
 
-  it('documents baseline and fallback strategy for the demo', () => {
-    expect(webPlatformCompatibilityNotes.webgpu.status).toBe('limited')
-    expect(webPlatformCompatibilityNotes.webgpu.fallback).toBe(
-      '2D canvas renderer with the same DOM accessibility layer',
+  it('documents the persistent HTML accessibility layer', () => {
+    expect(webPlatformCompatibilityNotes.renderer.status).toBe('3D WebGL')
+    expect(webPlatformCompatibilityNotes.accessibility.fallback).toContain(
+      'HTML grid',
     )
     expect(webPlatformCompatibilityNotes.accessibility.status).toBe('baseline')
   })
 
-  it('builds WebGPU geometry for board squares and visible piece markers', () => {
-    const board = getAriaBoard(createAccessibleChessGame())
-    const geometry = buildChessVertexData(board, null)
+  it('maps chess squares to the GLTF board coordinate order', () => {
+    expect(chessSquares).toHaveLength(64)
+    expect(chessSquares[0]).toBe('a8')
+    expect(chessSquares[63]).toBe('h1')
 
-    expect(geometry.squareCount).toBe(64)
-    expect(geometry.pieceCount).toBe(32)
-    expect(geometry.vertexData.length).toBeGreaterThan(64 * 6 * 5)
+    expect(squareToPosition('a1').x).toBeLessThan(squareToPosition('h1').x)
+    expect(squareToPosition('a1').z).toBe(squareToPosition('h1').z)
+    expect(squareToPosition('a1').z).toBeLessThan(squareToPosition('a8').z)
+  })
+
+  it('cycles through camera views with reader-facing labels', () => {
+    expect(cameraViewLabels.white).toBe('White view')
+    expect(cameraViewLabels.black).toBe('Black view')
+    expect(cameraViewLabels.top).toBe('Top view')
+    expect(nextCameraView('white')).toBe('black')
+    expect(nextCameraView('black')).toBe('top')
+    expect(nextCameraView('top')).toBe('white')
   })
 })

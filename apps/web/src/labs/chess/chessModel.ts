@@ -13,11 +13,14 @@ export type MoveResult = {
   announcement: string
   color?: 'black' | 'white'
   from?: Square
+  gameOver?: boolean
+  checkmate?: boolean
   ok: boolean
   piece?: string
   pieceType?: string
   san?: string
   to?: Square
+  winner?: 'black' | 'white'
 }
 
 const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const
@@ -86,18 +89,28 @@ export const moveBySquares = (
     const move = game.move({ from, promotion: 'q', to })
     const piece = `${colorNames[move.color]} ${pieceNames[move.piece]}`
     const nextTurn = game.turn() === 'w' ? 'White' : 'Black'
+    const winner = colorNames[move.color]
+    const checkmate = game.isCheckmate()
+    const gameOver = game.isGameOver()
 
     return {
-      announcement: `${piece[0].toUpperCase()}${piece.slice(
-        1,
-      )} moved from ${from} to ${to}. ${nextTurn} to move.`,
+      announcement: checkmate
+        ? `Checkmate. ${winner[0].toUpperCase()}${winner.slice(
+            1,
+          )} wins with ${move.san}.`
+        : `${piece[0].toUpperCase()}${piece.slice(
+            1,
+          )} moved from ${from} to ${to}. ${nextTurn} to move.`,
+      checkmate,
       color: colorNames[move.color],
       from: move.from,
+      gameOver,
       ok: true,
       piece,
       pieceType: pieceNames[move.piece],
       san: move.san,
       to: move.to,
+      winner: checkmate ? winner : undefined,
     }
   } catch {
     return {
