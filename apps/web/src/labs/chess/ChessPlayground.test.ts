@@ -86,6 +86,10 @@ describe('ChessPlayground accessibility', () => {
     container = null
     Reflect.deleteProperty(window, 'matchMedia')
     Reflect.deleteProperty(navigator, 'gpu')
+    Reflect.deleteProperty(navigator, 'vibrate')
+    document
+      .querySelectorAll('[data-chess-haptic-fallback]')
+      .forEach((element) => element.remove())
   })
 
   it('renders a canvas visual board with a semantic board for assistive tech', async () => {
@@ -115,6 +119,39 @@ describe('ChessPlayground accessibility', () => {
     expect(container?.querySelector('[role="status"]')?.textContent).toBe(
       'White pawn moved from e2 to e4. Black to move.',
     )
+  })
+
+  it('triggers haptic feedback for selection, moves, and illegal moves', async () => {
+    const vibrate = vi.fn()
+
+    Object.defineProperty(navigator, 'vibrate', {
+      configurable: true,
+      value: vibrate,
+    })
+
+    await renderChess()
+
+    await pressSquare('e2', ' ')
+    await pressSquare('e4', 'Enter')
+    await pressSquare('e7', ' ')
+    await pressSquare('e2', 'Enter')
+
+    expect(vibrate).toHaveBeenNthCalledWith(1, [8])
+    expect(vibrate).toHaveBeenNthCalledWith(2, [18, 35, 28])
+    expect(vibrate).toHaveBeenNthCalledWith(3, [8])
+    expect(vibrate).toHaveBeenNthCalledWith(4, [35, 30, 35, 30, 45])
+  })
+
+  it('falls back to a hidden switch haptic control without the Vibration API', async () => {
+    const click = vi.spyOn(HTMLLabelElement.prototype, 'click')
+
+    await renderChess()
+    await pressSquare('e2', ' ')
+
+    expect(document.querySelector('[data-chess-haptic-fallback]')).not.toBeNull()
+    expect(click).toHaveBeenCalled()
+
+    click.mockRestore()
   })
 
   it('shows the active 3D rendering path and baseline note', async () => {

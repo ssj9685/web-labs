@@ -85,6 +85,93 @@ const pieceGlyphs: Record<string, string> = {
   r: '♜',
 }
 
+const chessHapticPatterns = {
+  checkmate: [30, 50, 40, 50, 70],
+  clear: 10,
+  inspect: [35, 30, 45],
+  illegalMove: [35, 30, 35, 30, 45],
+  move: [18, 35, 28],
+  select: 8,
+} as const
+
+type ChessHapticIntent = keyof typeof chessHapticPatterns
+
+let hapticFallbackLabel: HTMLLabelElement | null = null
+let hapticFallbackTimers: number[] = []
+
+const clearHapticFallbackTimers = () => {
+  hapticFallbackTimers.forEach((timer) => window.clearTimeout(timer))
+  hapticFallbackTimers = []
+}
+
+const getHapticFallbackLabel = () => {
+  if (typeof document === 'undefined') return null
+  if (hapticFallbackLabel?.isConnected) return hapticFallbackLabel
+
+  const id = 'chess-haptic-fallback-switch'
+  const label = document.createElement('label')
+  label.setAttribute('data-chess-haptic-fallback', '')
+  label.setAttribute('for', id)
+  label.style.position = 'fixed'
+  label.style.left = '0'
+  label.style.bottom = '0'
+  label.style.width = '1px'
+  label.style.height = '1px'
+  label.style.opacity = '0'
+  label.style.pointerEvents = 'none'
+  label.style.overflow = 'hidden'
+
+  const input = document.createElement('input')
+  input.id = id
+  input.type = 'checkbox'
+  input.setAttribute('switch', '')
+  input.style.appearance = 'auto'
+
+  label.appendChild(input)
+  document.body.appendChild(label)
+  hapticFallbackLabel = label
+
+  return hapticFallbackLabel
+}
+
+const triggerSwitchHapticFallback = (pattern: number[]) => {
+  if (typeof window === 'undefined') return
+
+  const label = getHapticFallbackLabel()
+  if (!label) return
+
+  clearHapticFallbackTimers()
+
+  let elapsed = 0
+  pattern.forEach((segment, index) => {
+    const isPulse = index % 2 === 0
+
+    if (isPulse) {
+      if (elapsed === 0) {
+        label.click()
+      } else {
+        hapticFallbackTimers.push(
+          window.setTimeout(() => label.click(), elapsed),
+        )
+      }
+    }
+
+    elapsed += segment
+  })
+}
+
+const triggerChessHaptic = (intent: ChessHapticIntent) => {
+  const pattern = chessHapticPatterns[intent]
+  const vibrationPattern = Array.isArray(pattern) ? [...pattern] : [pattern]
+
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    const accepted = navigator.vibrate(vibrationPattern)
+    if (accepted !== false) return
+  }
+
+  triggerSwitchHapticFallback(vibrationPattern)
+}
+
 const prefersStableMobileInteraction = () =>
   typeof window !== 'undefined' &&
   typeof window.matchMedia === 'function' &&
@@ -301,6 +388,14 @@ export function ChessPlayground() {
             }
           : null
 
+      triggerChessHaptic(
+        result.ok
+          ? result.checkmate
+            ? 'checkmate'
+            : 'move'
+          : 'illegalMove',
+      )
+
       commitChessTransition(transitionTypes, () => {
         setAnnouncement(result.announcement)
 
@@ -334,6 +429,7 @@ export function ChessPlayground() {
     }
 
     if (selectedSquare === square) {
+      triggerChessHaptic('clear')
       commitChessTransition(['chess-clear', `square-${square}`], () => {
         setSelectedSquare(null)
         setAnnouncement(`${square} cleared. ${describeTurn(game)}.`)
@@ -343,12 +439,14 @@ export function ChessPlayground() {
 
     const destinations = getLegalDestinations(game, square)
     if (!destinations.length) {
+      triggerChessHaptic('inspect')
       commitChessTransition(['chess-inspect', `square-${square}`], () => {
         setAnnouncement(`${square} has no legal moves. ${describeTurn(game)}.`)
       })
       return
     }
 
+    triggerChessHaptic('select')
     commitChessTransition(['chess-select', `square-${square}`], () => {
       setSelectedSquare(square)
       setAnnouncement(
