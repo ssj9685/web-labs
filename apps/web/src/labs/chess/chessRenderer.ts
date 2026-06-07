@@ -77,9 +77,18 @@ type PieceKey =
   | 'rook_black'
   | 'rook_white'
 
-const chessSetUrl = '/assets/chess-set/chess_set_1k.gltf'
-const selectionAuraUrl = '/assets/chess-effects/selection-aura.svg'
-const legalMoveUrl = '/assets/chess-effects/legal-move.svg'
+const publicAssetUrl = (path: string) =>
+  `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`
+
+export const chessAssetUrls = {
+  legalMove: publicAssetUrl('assets/chess-effects/legal-move.svg'),
+  selectionAura: publicAssetUrl('assets/chess-effects/selection-aura.svg'),
+  set: publicAssetUrl('assets/chess-set/chess_set_1k.gltf'),
+} as const
+
+const chessSetUrl = chessAssetUrls.set
+const selectionAuraUrl = chessAssetUrls.selectionAura
+const legalMoveUrl = chessAssetUrls.legalMove
 const squareStep = 0.05788816
 const boardEdge = squareStep * 7
 const pieceY = 0.017392655834555626

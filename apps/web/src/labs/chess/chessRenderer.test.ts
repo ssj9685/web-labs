@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   chessSquares,
+  chessAssetUrls,
   cameraViewLabels,
   initialThreeRenderer,
   nextCameraView,
@@ -21,6 +22,15 @@ describe('3D chess renderer metadata', () => {
     expect(threeChessAssetInfo.author).toBe('Riley Queen')
     expect(threeChessAssetInfo.assetUrl).toBe(
       'https://polyhaven.com/a/chess_set',
+    )
+  })
+
+  it('resolves public chess assets through the Vite base path', () => {
+    expect(chessAssetUrls.set).toBe(
+      `${import.meta.env.BASE_URL}assets/chess-set/chess_set_1k.gltf`,
+    )
+    expect(chessAssetUrls.selectionAura).toBe(
+      `${import.meta.env.BASE_URL}assets/chess-effects/selection-aura.svg`,
     )
   })
 
